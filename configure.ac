@@ -34,8 +34,8 @@ AC_ARG_WITH(system, AS_HELP_STRING([--with-system=SYSTEM],[Platform identifier (
         # For backward compatibility, strip the `-gnu' part.
         system="$machine_name-linux";;
      freebsd*)
-        # freebsd does not have ABI compatibility and cannot have versions stripped
-        system="$machine_name-$host_os";;
+        # freebsd does not have ABI compatibility and cannot have major version stripped
+        system="$machine_name-`echo $host_os | "$SED" -e's/\..*$//g'`";;
      *)
         # Strip the version number from names such as `gnu0.3',
         # `darwin10.2.0', etc.
