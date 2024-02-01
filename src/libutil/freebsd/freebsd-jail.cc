@@ -16,20 +16,24 @@ AutoRemoveJail::AutoRemoveJail(int jid)
 {
 }
 
-void AutoRemoveJail::remove()
-{
-    if (jid != INVALID_JAIL) {
-        if (jail_remove(jid) < 0) {
-            throw SysError("Failed to remove jail %1%", jid);
-        }
-    }
-    cancel();
-}
-
 AutoRemoveJail::~AutoRemoveJail()
 {
     try {
-        remove();
+        if (jid != INVALID_JAIL) {
+            if (jail_remove(jid) < 0) {
+                throw SysError("Failed to remove jail %1%", jid);
+            }
+        }
+        for (auto & path : childrenMounts) {
+            int r = unmount(path.c_str(), 0);
+            if (r < 0 && errno == EBUSY) {
+                sleep(1);
+                r = unmount(path.c_str(), 0);
+            }
+            if (r < 0) {
+                throw SysError("Failed to unmount path %1%", PathFmt(path));
+            }
+        }
     } catch (...) {
         ignoreExceptionInDestructor();
     }
