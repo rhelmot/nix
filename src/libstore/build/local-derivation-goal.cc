@@ -644,7 +644,7 @@ void LocalDerivationGoal::startBuilder()
             dirsInChroot[i] = {i, true};
         }
 
-#if __linux__
+#if __linux__ || __FreeBSD__
         /* Create a temporary directory in which we set up the chroot
            environment using bind-mounts.  We put it in the Nix store
            to ensure that we can create hard-links to non-directory
@@ -730,6 +730,7 @@ void LocalDerivationGoal::startBuilder()
                 dirsInChroot.erase(worker.store.printStorePath(*i.second.second));
         }
 
+#if __linux__
         if (cgroup) {
             if (mkdir(cgroup->c_str(), 0755) != 0)
                 throw SysError("creating cgroup '%s'", *cgroup);
@@ -738,6 +739,7 @@ void LocalDerivationGoal::startBuilder()
             chownToBuilder(*cgroup + "/cgroup.threads");
             //chownToBuilder(*cgroup + "/cgroup.subtree_control");
         }
+#endif
 
 #else
         if (parsedDrv->useUidRange())
