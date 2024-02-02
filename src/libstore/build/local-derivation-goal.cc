@@ -53,6 +53,15 @@
 #include <sys/sysctl.h>
 #endif
 
+#if __FreeBSD__
+#include <sys/param.h>
+#include <sys/jail.h>
+#include <jail.h>
+#include <stdlib.h>
+#include <sys/mount.h>
+#include <string.h>
+#endif
+
 #include <pwd.h>
 #include <grp.h>
 #include <iostream>
@@ -108,7 +117,7 @@ LocalDerivationGoal::~LocalDerivationGoal()
 
 inline bool LocalDerivationGoal::needsHashRewrite()
 {
-#if __linux__
+#if __linux__ || __FreeBSD__
     return !useChroot;
 #else
     /* Darwin requires hash rewriting even when sandboxing is enabled. */
@@ -385,7 +394,7 @@ void LocalDerivationGoal::cleanupPostOutputsRegisteredModeNonCheck()
 }
 
 
-#if __linux__
+#if __linux__ || __FreeBSD__
 static void linkOrCopy(const Path & from, const Path & to)
 {
     if (link(from.c_str(), to.c_str()) == -1) {
@@ -739,6 +748,71 @@ void LocalDerivationGoal::startBuilder()
             chownToBuilder(*cgroup + "/cgroup.threads");
             //chownToBuilder(*cgroup + "/cgroup.subtree_control");
         }
+#elif __FreeBSD__
+        mkdir((chrootRootDir + "/dev").c_str(), 0555);
+        if (mknod((chrootRootDir + "/dev/null").c_str(), 020666, 0x14) < 0)
+            throw SysError("mknod /dev/null");
+        mknod((chrootRootDir + "/dev/zero").c_str(), 020666, 0x15);
+        mkdir((chrootRootDir + "/dev/fd").c_str(), 0555);
+        mknod((chrootRootDir + "/dev/fd/0").c_str(), 020666, 0x1f);
+        mknod((chrootRootDir + "/dev/fd/1").c_str(), 020666, 0x21);
+        mknod((chrootRootDir + "/dev/fd/2").c_str(), 020666, 0x23);
+
+        /* Fixed-output derivations typically need to access the
+           network, so give them access to /etc/resolv.conf and so
+           on. */
+        if (!derivationType.isSandboxed()) {
+            // Only use nss functions to resolve hosts and
+            // services. Don’t use it for anything else that may
+            // be configured for this system. This limits the
+            // potential impurities introduced in fixed-outputs.
+            writeFile(chrootRootDir + "/etc/nsswitch.conf", "hosts: files dns\nservices: files\n");
+
+            /* N.B. it is realistic that these paths might not exist. It
+               happens when testing Nix building fixed-output derivations
+               within a pure derivation. */
+            for (auto & path : { "/etc/resolv.conf", "/etc/services", "/etc/hosts" })
+                if (pathExists(path))
+                    dirsInChroot.try_emplace(path, path, true);
+
+            if (settings.caFile != "")
+                dirsInChroot.try_emplace("/etc/ssl/certs/ca-certificates.crt", settings.caFile, true);
+        }
+
+        for (auto & i : dirsInChroot) {
+            char errmsg[255];
+            errmsg[0] = 0;
+
+            if (i.second.source == "/proc") continue; // backwards compatibility
+            auto path = chrootRootDir + i.first;
+
+            struct stat stat_buf;
+            if (stat(i.second.source.c_str(), &stat_buf) < 0) {
+                throw SysError("stat");
+            }
+
+            // mount points must exist and be the right type
+            if (S_ISDIR(stat_buf.st_mode)) {
+                mkdir(path.c_str(), 0555);
+            } else {
+                close(open(path.c_str(), O_CREAT | O_RDONLY, 0444));
+            }
+
+            struct iovec iov[8] = {
+                { .iov_base = (void*)"fstype", .iov_len = sizeof("fstype") },
+                { .iov_base = (void*)"nullfs", .iov_len = sizeof("nullfs") },
+                { .iov_base = (void*)"fspath", .iov_len = sizeof("fspath") },
+                { .iov_base = (void*)path.c_str(), .iov_len = path.length() + 1 },
+                { .iov_base = (void*)"target", .iov_len = sizeof("target") },
+                { .iov_base = (void*)i.second.source.c_str(), .iov_len = i.second.source.length() + 1 },
+                { .iov_base = (void*)"errmsg", .iov_len = sizeof("errmsg") },
+                { .iov_base = (void*)errmsg, .iov_len = sizeof(errmsg) },
+            };
+            if (nmount(iov, 8, 0) < 0) {
+                throw SysError(errmsg);
+            }
+            autoDelMounts.push_back(std::make_shared<AutoUnmount>(path));
+        }
 #endif
 
 #else
@@ -1002,6 +1076,50 @@ void LocalDerivationGoal::startBuilder()
         writeFull(userNamespaceSync.writeSide.get(), "1");
 
     } else
+#elif __FreeBSD__
+    if (useChroot) {
+
+        int jid;
+
+        printf("Entering jail...\n");
+        if (privateNetwork) {
+             jid = jail_setv(JAIL_CREATE,
+                    "persist", "true",
+                    "path", chrootRootDir.c_str(),
+                    "vnet", "new",
+                    NULL
+            );
+            if (jid < 0) {
+                throw SysError("Failed to create jail (isolated network)");
+            }
+            autoDelJail = std::make_shared<AutoRemoveJail>(jid);
+
+            if (system(("ifconfig -j " + std::to_string(jid) + " lo0 inet 127.0.0.1/8 up").c_str()) != 0) {
+                throw SysError("Failed to set up isolated network");
+            }
+        } else {
+            jid = jail_setv(JAIL_CREATE,
+                    "persist", "true",
+                    "path", chrootRootDir.c_str(),
+                    "ip4", "inherit",
+                    "ip6", "inherit",
+                    "allow.raw_sockets", "true",
+                    NULL
+            );
+            if (jid < 0) {
+                throw SysError("Failed to create jail (fixed-derivation)");
+            }
+            autoDelJail = std::make_shared<AutoRemoveJail>(jid);
+        }
+
+        pid = startProcess([&]() {
+            openSlave();
+            if (jail_attach(jid) < 0) {
+                throw SysError("Failed to attach to jail");
+            }
+            runChild();
+        });
+    } else
 #endif
     {
         pid = startProcess([&]() {
@@ -1045,7 +1163,7 @@ void LocalDerivationGoal::startBuilder()
 void LocalDerivationGoal::initTmpDir() {
     /* In a sandbox, for determinism, always use the same temporary
        directory. */
-#if __linux__
+#if __linux__ || __FreeBSD__
     tmpDirInSandbox = useChroot ? settings.sandboxBuildDir : tmpDir;
 #else
     tmpDirInSandbox = tmpDir;

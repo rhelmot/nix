@@ -70,6 +70,13 @@ case "$host_os" in
     ;;
 esac
 
+# FreeBSD-specific stuff.
+case "$host_os" in
+  freebsd*)
+    LDFLAGS="-ljail $LDFLAGS"
+    ;;
+esca
+
 
 # Check for pubsetbuf.
 AC_MSG_CHECKING([for pubsetbuf])

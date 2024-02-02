@@ -70,6 +70,11 @@ struct LocalDerivationGoal : public DerivationGoal
      * RAII object to delete the chroot directory.
      */
     std::shared_ptr<AutoDelete> autoDelChroot;
+#if __FreeBSD__
+    /* Destructors happen in reverse order from declaration */
+    std::shared_ptr<AutoRemoveJail> autoDelJail;
+    std::vector<std::shared_ptr<AutoUnmount>> autoDelMounts;
+#endif
 
     /**
      * Whether to run the build in a private network namespace.

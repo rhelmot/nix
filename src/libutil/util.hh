@@ -337,6 +337,31 @@ public:
     void fsync();
 };
 
+#if __FreeBSD__
+class AutoRemoveJail
+{
+    int jid;
+    bool del;
+public:
+    AutoRemoveJail(int jid);
+    AutoRemoveJail();
+    ~AutoRemoveJail();
+    void cancel();
+    void reset(int j);
+};
+
+class AutoUnmount
+{
+    Path path;
+    bool del;
+public:
+    AutoUnmount(Path&);
+    AutoUnmount();
+    ~AutoUnmount();
+    void cancel();
+};
+#endif
+
 
 /**
  * Create a temporary directory.
