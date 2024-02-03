@@ -388,6 +388,8 @@ void LocalDerivationGoal::cleanupPostOutputsRegisteredModeNonCheck()
         deletePath(worker.store.Store::toRealPath(i.second));
 
     /* Delete the chroot (if we were using one). */
+    autoDelMounts.clear();
+    autoDelJail.reset();
     autoDelChroot.reset(); /* this runs the destructor */
 
     cleanupPostOutputsRegisteredModeCheck();
@@ -749,14 +751,22 @@ void LocalDerivationGoal::startBuilder()
             //chownToBuilder(*cgroup + "/cgroup.subtree_control");
         }
 #elif __FreeBSD__
-        mkdir((chrootRootDir + "/dev").c_str(), 0555);
-        if (mknod((chrootRootDir + "/dev/null").c_str(), 020666, 0x14) < 0)
-            throw SysError("mknod /dev/null");
-        mknod((chrootRootDir + "/dev/zero").c_str(), 020666, 0x15);
-        mkdir((chrootRootDir + "/dev/fd").c_str(), 0555);
-        mknod((chrootRootDir + "/dev/fd/0").c_str(), 020666, 0x1f);
-        mknod((chrootRootDir + "/dev/fd/1").c_str(), 020666, 0x21);
-        mknod((chrootRootDir + "/dev/fd/2").c_str(), 020666, 0x23);
+        auto devpath = chrootRootDir + "/dev";
+        mkdir(devpath.c_str(), 0555);
+        mkdir((chrootRootDir + "/bin").c_str(), 0555);
+        char errmsg[255] = "";
+        struct iovec iov[8] = {
+            { .iov_base = (void*)"fstype", .iov_len = sizeof("fstype") },
+            { .iov_base = (void*)"devfs", .iov_len = sizeof("devfs") },
+            { .iov_base = (void*)"fspath", .iov_len = sizeof("fspath") },
+            { .iov_base = (void*)devpath.c_str(), .iov_len = devpath.length() + 1 },
+            { .iov_base = (void*)"errmsg", .iov_len = sizeof("errmsg") },
+            { .iov_base = (void*)errmsg, .iov_len = sizeof(errmsg) },
+        };
+        if (nmount(iov, 6, 0) < 0) {
+            throw SysError("Failed to mount jail /dev: %1%", errmsg);
+        }
+        autoDelMounts.push_back(std::make_shared<AutoUnmount>(devpath));
 
         /* Fixed-output derivations typically need to access the
            network, so give them access to /etc/resolv.conf and so
@@ -809,7 +819,7 @@ void LocalDerivationGoal::startBuilder()
                 { .iov_base = (void*)errmsg, .iov_len = sizeof(errmsg) },
             };
             if (nmount(iov, 8, 0) < 0) {
-                throw SysError(errmsg);
+                throw SysError("Failed to mount nullfs for %1% - %2%", path, errmsg);
             }
             autoDelMounts.push_back(std::make_shared<AutoUnmount>(path));
         }
@@ -1081,11 +1091,11 @@ void LocalDerivationGoal::startBuilder()
 
         int jid;
 
-        printf("Entering jail...\n");
         if (privateNetwork) {
              jid = jail_setv(JAIL_CREATE,
                     "persist", "true",
                     "path", chrootRootDir.c_str(),
+                    "devfs_ruleset", "4",
                     "vnet", "new",
                     NULL
             );
@@ -1101,6 +1111,7 @@ void LocalDerivationGoal::startBuilder()
             jid = jail_setv(JAIL_CREATE,
                     "persist", "true",
                     "path", chrootRootDir.c_str(),
+                    "devfs_ruleset", "4",
                     "ip4", "inherit",
                     "ip6", "inherit",
                     "allow.raw_sockets", "true",
