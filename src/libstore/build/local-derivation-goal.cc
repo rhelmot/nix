@@ -661,6 +661,22 @@ void LocalDerivationGoal::startBuilder()
            to ensure that we can create hard-links to non-directory
            inputs in the fake Nix store in the chroot (see below). */
         chrootRootDir = worker.store.Store::toRealPath(drvPath) + ".chroot";
+#if __FreeBSD__
+        int count;
+        struct statfs *mntbuf;
+        if ((count = getmntinfo(&mntbuf, MNT_WAIT)) < 0) {
+            throw SysError("Couldn't get mount info for chroot");
+        }
+
+        for (int i = 0; i < count; i++) {
+            Path mounted(mntbuf[i].f_mntonname);
+            if (hasPrefix(mounted, chrootRootDir)) {
+                if (unmount(mounted.c_str(), 0) < 0) {
+                    throw SysError("Failed to unmount path %1%", mounted);
+                }
+            }
+        }
+#endif
         deletePath(chrootRootDir);
 
         /* Clean up the chroot directory automatically. */
@@ -1088,6 +1104,16 @@ void LocalDerivationGoal::startBuilder()
     } else
 #elif __FreeBSD__
     if (useChroot) {
+        /* Now that we now the sandbox uid, we can write
+           /etc/passwd. */
+        writeFile(chrootRootDir + "/etc/passwd", fmt(
+                "root:x:0:0::::Nix build user:%3%:/noshell\n"
+                "nixbld:x:%1%:%2%::::Nix build user:%3%:/noshell\n"
+                "nobody:x:65534:65534::::Nobody:/:/noshell\n",
+                sandboxUid(), sandboxGid(), settings.sandboxBuildDir));
+        if (system(("pwd_mkdb -d " + chrootRootDir + "/etc " + chrootRootDir + "/etc/passwd 2>/dev/null").c_str()) != 0) {
+            throw SysError("Failed to set up isolated users");
+        }
 
         int jid;
 
@@ -1097,6 +1123,7 @@ void LocalDerivationGoal::startBuilder()
                     "path", chrootRootDir.c_str(),
                     "devfs_ruleset", "4",
                     "vnet", "new",
+                    "host.hostname", "nixbsd",
                     NULL
             );
             if (jid < 0) {
@@ -1115,6 +1142,7 @@ void LocalDerivationGoal::startBuilder()
                     "ip4", "inherit",
                     "ip6", "inherit",
                     "allow.raw_sockets", "true",
+                    "host.hostname", "nixbsd",
                     NULL
             );
             if (jid < 0) {
