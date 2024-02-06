@@ -28,7 +28,7 @@ testRepl () {
     local outPath=$(echo "$replOutput" |&
         grep -o -E "$NIX_STORE_DIR/\w*-simple")
     nix path-info "${nixArgs[@]}" "$outPath"
-    [ "$(grealpath ./repl-result-out)" == "$outPath" ] || fail "nix repl :bl doesn't make a symlink"
+    [ "$(realpath ./repl-result-out)" == "$outPath" ] || fail "nix repl :bl doesn't make a symlink"
     # run it again without checking the output to ensure the previously created symlink gets overwritten
     nix repl "${nixArgs[@]}" <<< "$replCmds" || fail "nix repl does not work twice with the same inputs"
 
