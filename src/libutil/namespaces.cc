@@ -1,3 +1,4 @@
+#include "namespaces.hh"
 #include "current-process.hh"
 #include "util.hh"
 #include "finally.hh"

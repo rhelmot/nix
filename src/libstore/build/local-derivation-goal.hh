@@ -4,6 +4,7 @@
 #include "derivation-goal.hh"
 #include "local-store.hh"
 #include "processes.hh"
+#include "namespaces.hh"
 
 namespace nix {
 
