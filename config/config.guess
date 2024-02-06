@@ -866,9 +866,9 @@ EOF
 	if echo __ARM_PCS_VFP | $CC_FOR_BUILD -E - 2>/dev/null \
 	    | grep -q __ARM_PCS_VFP
 	then
-	    echo "${UNAME_PROCESSOR}"-freebsd"$(echo ${UNAME_RELEASE}|sed -e 's/[-(].*//')"-gnueabi
+	    echo "${UNAME_PROCESSOR}"-unknown-freebsd"$(echo ${UNAME_RELEASE}|sed -e 's/[-(].*//')"-gnueabi
 	else
-	    echo "${UNAME_PROCESSOR}"-freebsd"$(echo ${UNAME_RELEASE}|sed -e 's/[-(].*//')"-gnueabihf
+	    echo "${UNAME_PROCESSOR}"-unknown-freebsd"$(echo ${UNAME_RELEASE}|sed -e 's/[-(].*//')"-gnueabihf
 	fi
 	exit ;;
     *:FreeBSD:*:*)
@@ -879,7 +879,7 @@ EOF
 	    i386)
 		UNAME_PROCESSOR=i586 ;;
 	esac
-	echo "$UNAME_PROCESSOR"-freebsd"$(echo "$UNAME_RELEASE"|sed -e 's/[-(].*//')"
+	echo "$UNAME_PROCESSOR"-unknown-freebsd"$(echo "$UNAME_RELEASE"|sed -e 's/[-(].*//')"
 	exit ;;
     i*:CYGWIN*:*)
 	echo "$UNAME_MACHINE"-pc-cygwin
