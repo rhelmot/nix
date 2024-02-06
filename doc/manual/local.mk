@@ -41,11 +41,11 @@ nix-eval = $(dummy-env) $(doc_nix) eval --experimental-features nix-command -I n
 define process-includes
 	while read -r line; do \
 		set -euo pipefail; \
-		filename="$$(dirname $(1))/$$(sed 's/{{#include \(.*\)}}/\1/'<<< $$line)"; \
+		filename="$$(dirname $(1))/$$(gsed 's/{{#include \(.*\)}}/\1/'<<< $$line)"; \
 		test -f "$$filename" || ( echo "#include-d file '$$filename' does not exist." >&2; exit 1; ); \
-		matchline="$$(sed 's|/|\\/|g' <<< $$line)"; \
-		sed -i "/$$matchline/r $$filename" $(2); \
-		sed -i "s/$$matchline//" $(2); \
+		matchline="$$(gsed 's|/|\\/|g' <<< $$line)"; \
+		gsed -i "/$$matchline/r $$filename" $(2); \
+		gsed -i "s/$$matchline//" $(2); \
 	done < <(grep '{{#include' $(1))
 endef
 
@@ -64,7 +64,7 @@ define render-subcommand
 	$(trace-gen) lowdown -sT man --nroff-nolinks -M section=1 $^.tmp -o $@
 	@# fix up `lowdown`'s automatic escaping of `--`
 	@# https://github.com/kristapsdz/lowdown/blob/edca6ce6d5336efb147321a43c47a698de41bb7c/entity.c#L202
-	@sed -i 's/\e\[u2013\]/--/' $@
+	@gsed -i 's/\e\[u2013\]/--/' $@
 	@rm $^.tmp
 endef
 
@@ -215,8 +215,8 @@ $(docdir)/manual/index.html: $(MANUAL_SRCS) $(d)/book.toml $(d)/anchors.jq $(d)/
 			$(call process-includes,$$file,$$file); \
 		done; \
 		find "$$tmp" -name '*.md' ! -name 'documentation.md' | while read -r file; do \
-			docroot="$$(realpath --relative-to="$$(dirname "$$file")" $$tmp/manual/src)"; \
-			sed -i "s,@docroot@,$$docroot,g" "$$file"; \
+			docroot="$$(grealpath --relative-to="$$(dirname "$$file")" $$tmp/manual/src)"; \
+			gsed -i "s,@docroot@,$$docroot,g" "$$file"; \
 		done; \
 		set -euo pipefail; \
 		RUST_LOG=warn mdbook build "$$tmp/manual" -d $(DESTDIR)$(docdir)/manual.tmp 2>&1 \

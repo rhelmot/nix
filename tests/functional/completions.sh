@@ -11,7 +11,7 @@ EOF
 mkdir -p foo
 cat <<EOF > foo/flake.nix
 {
-    inputs.a.url = "path:$(realpath dep)";
+    inputs.a.url = "path:$(grealpath dep)";
 
     outputs = i: {
         sampleOutput = 1;
@@ -21,7 +21,7 @@ EOF
 mkdir -p bar
 cat <<EOF > bar/flake.nix
 {
-    inputs.b.url = "path:$(realpath dep)";
+    inputs.b.url = "path:$(grealpath dep)";
 
     outputs = i: {
         sampleOutput = 1;
