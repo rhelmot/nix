@@ -64,7 +64,7 @@ define render-subcommand
 	$(trace-gen) lowdown -sT man --nroff-nolinks -M section=1 $^.tmp -o $@
 	@# fix up `lowdown`'s automatic escaping of `--`
 	@# https://github.com/kristapsdz/lowdown/blob/edca6ce6d5336efb147321a43c47a698de41bb7c/entity.c#L202
-	@gsed -i 's/\e\[u2013\]/--/' $@
+	@sed -i 's/\e\[u2013\]/--/' $@
 	@rm $^.tmp
 endef
 
