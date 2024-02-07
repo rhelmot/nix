@@ -301,6 +301,16 @@ struct LocalDerivationGoal : public DerivationGoal
      * rewrites caught everything
      */
     StorePath makeFallbackPath(OutputNameView outputName);
+
+    /**
+     * Setup common to all platforms which perform chroots.
+     */
+    void basicChrootSetup(Path & chrootRootDir);
+
+#include "linux/local-derivation-goal.hh"
+#include "darwin/local-derivation-goal.hh"
+#include "freebsd/local-derivation-goal.hh"
 };
 
+void openSlave(const std::string &slaveName);
 }
