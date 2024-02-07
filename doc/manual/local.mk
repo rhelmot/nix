@@ -214,7 +214,7 @@ $(docdir)/manual/index.html: $(MANUAL_SRCS) $(d)/book.toml $(d)/anchors.jq $(d)/
 		find "$$tmp" -name '*.md' | while read -r file; do \
 			$(call process-includes,$$file,$$file); \
 		done; \
-		find "$$tmp" -name '*.md' | while read -r file; do \
+		find "$$tmp" -name '*.md' ! -name 'documentation.md' | while read -r file; do \
 			docroot="$$(realpath --relative-to="$$(dirname "$$file")" $$tmp/manual/src)"; \
 			sed -i "s,@docroot@,$$docroot,g" "$$file"; \
 		done; \
