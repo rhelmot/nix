@@ -85,7 +85,7 @@ struct CmdEval : MixJSON, InstallableValueCommand, MixReadOnlyOption
                 state->forceValue(v, pos);
                 if (v.type() == nString)
                     // FIXME: disallow strings with contexts?
-                    writeFile(path, v.string.s);
+                    writeFile(path, v.string_view());
                 else if (v.type() == nAttrs) {
                     if (mkdir(path.c_str(), 0777) == -1)
                         throw SysError("creating directory '%s'", path);
@@ -121,7 +121,7 @@ struct CmdEval : MixJSON, InstallableValueCommand, MixReadOnlyOption
 
         else {
             state->forceValueDeep(*v);
-            logger->cout("%s", printValue(*state, *v));
+            logger->cout("%s", ValuePrinter(*state, *v, PrintOptions { .force = true }));
         }
     }
 };
