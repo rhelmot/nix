@@ -394,9 +394,12 @@ void LocalDerivationGoal::cleanupPostOutputsRegisteredModeNonCheck()
     for (auto & i : redirectedOutputs)
         deletePath(worker.store.Store::toRealPath(i.second));
 
-    /* Delete the chroot (if we were using one). */
+#if __FreeBSD__
+    /* Unmount and free jail id, if in use */
     autoDelMounts.clear();
     autoDelJail.reset();
+#endif
+    /* Delete the chroot (if we were using one). */
     autoDelChroot.reset(); /* this runs the destructor */
 
     cleanupPostOutputsRegisteredModeCheck();
