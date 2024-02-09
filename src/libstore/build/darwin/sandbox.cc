@@ -4,7 +4,7 @@
 #include "worker.hh"
 
 namespace nix {
-    Strings LocalDerivationGoal::specialSandboxChild(std::string &builder) {
+    void LocalDerivationGoal::specialSandboxChild(std::string &builder, Strings &args) {
         /* This has to appear before import statements. */
         std::string sandboxProfile = "(version 1)\n";
 
@@ -113,7 +113,6 @@ namespace nix {
         /* They don't like trailing slashes on subpath directives */
         if (globalTmpDir.back() == '/') globalTmpDir.pop_back();
 
-        Strings args;
         if (getEnv("_NIX_TEST_NO_SANDBOX") != "1") {
             builder = "/usr/bin/sandbox-exec";
             args.push_back("sandbox-exec");
@@ -130,7 +129,6 @@ namespace nix {
             builder = drv->builder;
             args.push_back(std::string(baseNameOf(drv->builder)));
         }
-        return args;
     }
 
     void LocalDerivationGoal::specialExecBuilder(std::string &builder, Strings &args, Strings &envStrs) {

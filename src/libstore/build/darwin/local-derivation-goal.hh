@@ -1,4 +1,4 @@
 #if __APPLE__
-    Strings specialSandboxChild(std::string &builder);
+    void specialSandboxChild(std::string &builder, Strings &args);
     void specialExecBuilder(std::string &builder, Strings &args, Strings &envStrs);
 #endif

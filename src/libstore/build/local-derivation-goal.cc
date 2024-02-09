@@ -1341,7 +1341,7 @@ void LocalDerivationGoal::runChild()
         }
 #if __APPLE__
         else {
-            args.extend(specialSandboxChild(builder);
+            specialSandboxChild(builder, args);
         }
 #else
         else {
