@@ -1,10 +1,18 @@
 #if __linux__
 
 #include "sandbox.hh"
+#include "finally.hh"
+#include "worker.hh"
 
 namespace nix {
 
-static void doBind(const Path & source, const Path & target, bool optional = false) {
+static void chmod_(const Path & path, mode_t mode)
+{
+    if (chmod(path.c_str(), mode) == -1)
+        throw SysError("setting permissions on '%s'", path);
+}
+
+void doBind(const Path & source, const Path & target, bool optional) {
     debug("bind mounting '%1%' to '%2%'", source, target);
     struct stat st;
     if (stat(source.c_str(), &st) == -1) {
@@ -24,6 +32,7 @@ static void doBind(const Path & source, const Path & target, bool optional = fal
 };
 
 void LocalDerivationGoal::chrootSetup(Path &chrootRootDir) {
+    basicChrootSetup(chrootRootDir);
     if (cgroup) {
         if (mkdir(cgroup->c_str(), 0755) != 0)
             throw SysError("creating cgroup '%s'", *cgroup);
@@ -515,7 +524,7 @@ void LocalDerivationGoal::createChild(const std::string &slaveName) {
     writeFull(userNamespaceSync.writeSide.get(), "1");
 }
 
-void LocalDerivationGoal::materialiseRecursiveDependency() {
+void LocalDerivationGoal::materialiseRecursiveDependency(const StorePath &path) {
     Path source = worker.store.Store::toRealPath(path);
     Path target = chrootRootDir + worker.store.printStorePath(path);
 

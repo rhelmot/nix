@@ -1,9 +1,10 @@
 #if __APPLE__
 
 #include "sandbox.hh"
+#include "worker.hh"
 
 namespace nix {
-    Strings LocalDerivationGoal::specialSandboxChild() {
+    Strings LocalDerivationGoal::specialSandboxChild(std::string &builder) {
         /* This has to appear before import statements. */
         std::string sandboxProfile = "(version 1)\n";
 
@@ -38,7 +39,7 @@ namespace nix {
             }
 
             /* Violations will go to the syslog if you set this. Unfortunately the destination does not appear to be configurable */
-            if (settings.darwinLogSandboxViolation) {
+            if (settings.darwinLogSandboxViolations) {
                 sandboxProfile += "(deny default)\n";
             } else {
                 sandboxProfile += "(deny default (with no-log))\n";
@@ -48,7 +49,7 @@ namespace nix {
                 #include "sandbox-defaults.sb"
                 ;
 
-            if (derivationType.isSandboxed())
+            if (derivationType->isSandboxed())
                 sandboxProfile +=
                     #include "sandbox-network.sb"
                     ;
@@ -132,7 +133,7 @@ namespace nix {
         return args;
     }
 
-    void specialExecBuilder(std::string &builder, Strings &args, Strings &envStrs) {
+    void LocalDerivationGoal::specialExecBuilder(std::string &builder, Strings &args, Strings &envStrs) {
         posix_spawnattr_t attrp;
 
         if (posix_spawnattr_init(&attrp))

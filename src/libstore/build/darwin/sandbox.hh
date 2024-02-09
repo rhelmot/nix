@@ -10,8 +10,4 @@
 
 #define REQUIRES_HASH_REWRITE true
 
-namespace nix {
-    void specialExecBuilder(std::string &builder, Strings &args, Strings &envStrs);
-}
-
 #endif

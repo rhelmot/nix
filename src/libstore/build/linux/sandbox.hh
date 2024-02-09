@@ -4,6 +4,7 @@
 
 #include "../local-derivation-goal.hh"
 #include "util.hh"
+#include "cgroup.hh"
 
 #include <sys/ioctl.h>
 #include <net/if.h>
@@ -21,7 +22,7 @@
 #define REQUIRES_HASH_REWRITE false
 
 namespace nix {
-static void doBind(const Path & source, const Path & target, bool optional = false);
+void doBind(const Path & source, const Path & target, bool optional = false);
 void setupSeccomp();
 }
 

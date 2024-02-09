@@ -1237,7 +1237,7 @@ void LocalDerivationGoal::addDependency(const StorePath & path)
         debug("materialising '%s' in the sandbox", worker.store.printStorePath(path));
 
         #if __linux__
-        materialiseRecursiveDependency();
+        materialiseRecursiveDependency(path);
         #else
         throw Error("don't know how to make path '%s' (produced by a recursive Nix call) appear in the sandbox",
             worker.store.printStorePath(path));
@@ -1341,15 +1341,7 @@ void LocalDerivationGoal::runChild()
         }
 #if __APPLE__
         else {
-            args.extend(specialSandboxChild(
-                        useChroot,
-                        pathsInChroot,
-                        worker,
-                        settings.darwinLogSandboxViolation,
-                        !derivationType.isSandboxed(),
-                        parsedDrv->getBoolAttr("__darwinAllowLocalNetworking"),
-                        additionalSandboxProfile
-            ));
+            args.extend(specialSandboxChild(builder);
         }
 #else
         else {
