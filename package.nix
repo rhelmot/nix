@@ -15,6 +15,7 @@
 , readline
 , fileset
 , flex
+, freebsd
 , git
 , gtest
 , jq
@@ -37,6 +38,7 @@
 , xz
 
 , busybox-sandbox-shell ? null
+, bash-static ? null
 
 # Configuration Options
 #:
@@ -233,6 +235,7 @@ in {
     gtest
     rapidcheck
   ] ++ lib.optional stdenv.isLinux libseccomp
+    ++ lib.optional stdenv.isFreeBSD freebsd.libjail
     ++ lib.optional stdenv.hostPlatform.isx86_64 libcpuid
     # There have been issues building these dependencies
     ++ lib.optional (stdenv.hostPlatform == stdenv.buildPlatform && (stdenv.isLinux || stdenv.isDarwin))
@@ -296,6 +299,8 @@ in {
     "--with-boost=${boost}/lib"
   ] ++ lib.optionals (doBuild && stdenv.isLinux) [
     "--with-sandbox-shell=${busybox-sandbox-shell}/bin/busybox"
+  ] ++ lib.optionals (doBuild && stdenv.isFreeBSD) [
+    "--with-sandbox-shell=${bash-static}/bin/bash"
   ] ++ lib.optional (doBuild && stdenv.isLinux && !(stdenv.hostPlatform.isStatic && stdenv.system == "aarch64-linux"))
        "LDFLAGS=-fuse-ld=gold"
     ++ lib.optional (doBuild && stdenv.hostPlatform.isStatic) "--enable-embedded-sandbox-shell"
@@ -303,7 +308,7 @@ in {
 
   enableParallelBuilding = true;
 
-  makeFlags = "profiledir=$(out)/etc/profile.d PRECOMPILE_HEADERS=1";
+  makeFlags = "profiledir=$(out)/etc/profile.d" + lib.optionalString (!stdenv.isFreeBSD) " PRECOMPILE_HEADERS=1";
 
   installTargets = lib.optional doBuild "install"
     ++ lib.optional enableInternalAPIDocs "internal-api-html";

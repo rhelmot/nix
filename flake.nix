@@ -34,12 +34,12 @@
       linux64BitSystems = [ "x86_64-linux" "aarch64-linux" ];
       linuxSystems = linux32BitSystems ++ linux64BitSystems;
       darwinSystems = [ "x86_64-darwin" "aarch64-darwin" ];
-      systems = linuxSystems ++ darwinSystems;
+      freebsdSystems = [ "x86_64-freebsd" ];
+      systems = linuxSystems ++ darwinSystems ++ freebsdSystems;
 
       crossSystems = [
         "armv6l-unknown-linux-gnueabihf"
         "armv7l-unknown-linux-gnueabihf"
-        "x86_64-unknown-freebsd13"
         "x86_64-unknown-netbsd"
       ];
 
@@ -80,8 +80,6 @@
             };
             crossSystem = if crossSystem == null then null else {
               config = crossSystem;
-            } // lib.optionalAttrs (crossSystem == "x86_64-unknown-freebsd13") {
-              useLLVM = true;
             };
             overlays = [
               (overlayFor (p: p.${stdenv}))
@@ -152,6 +150,10 @@
             '';
           };
 
+          default-bash-static = final.bash.override {
+            stdenv = final.stdenvAdapters.makeStatic stdenv;
+          };
+
           libgit2-nix = final.libgit2.overrideAttrs (attrs: {
             src = libgit2;
             version = libgit2.lastModifiedDate;
@@ -188,6 +190,7 @@
               boehmgc = final.boehmgc-nix;
               libgit2 = final.libgit2-nix;
               busybox-sandbox-shell = final.busybox-sandbox-shell or final.default-busybox-sandbox-shell;
+              bash-static = final.bash-static or final.default-bash-static;
             } // {
               # this is a proper separate downstream package, but put
               # here also for back compat reasons.
