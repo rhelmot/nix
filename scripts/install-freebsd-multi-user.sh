@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+
+set -eu
+set -o pipefail
+
+# System specific settings
+export NIX_FIRST_BUILD_UID="${NIX_FIRST_BUILD_UID:-30001}"
+export NIX_BUILD_USER_NAME_TEMPLATE="nixbld%d"
+
+poly_cure_artifacts() {
+    :
+}
+
+poly_service_installed_check() {
+    [ -e /etc/rc.d/nix_daemon ]
+}
+
+poly_service_uninstall_directions() {
+    :
+}
+
+poly_service_setup_note() {
+    :
+}
+
+poly_extra_try_me_commands() {
+    cat <<EOF
+  $ sudo nix-daemon
+EOF
+}
+
+poly_configure_nix_daemon_service() {
+    reminder "I don't support your init system yet; you may want to add nix-daemon manually."
+}
+
+poly_group_exists() {
+    getent group "$1" > /dev/null 2>&1
+}
+
+poly_group_id_get() {
+    getent group "$1" | cut -d: -f3
+}
+
+poly_create_build_group() {
+    _sudo "Create the Nix build group, $NIX_BUILD_GROUP_NAME" \
+          pw groupadd "$NIX_BUILD_GROUP_NAME" -g "$NIX_BUILD_GROUP_ID" >&2
+}
+
+poly_user_exists() {
+    getent passwd "$1" > /dev/null 2>&1
+}
+
+poly_user_id_get() {
+    getent passwd "$1" | cut -d: -f3
+}
+
+poly_user_hidden_get() {
+    echo "1"
+}
+
+poly_user_hidden_set() {
+    true
+}
+
+poly_user_home_get() {
+    getent passwd "$1" | cut -d: -f6
+}
+
+poly_user_home_set() {
+    _sudo "in order to give $1 a safe home directory" \
+          pw usermod -d "$2" -n "$1"
+}
+
+poly_user_note_get() {
+    getent passwd "$1" | cut -d: -f5
+}
+
+poly_user_note_set() {
+    _sudo "in order to give $1 a useful comment" \
+          pw usermod -c "$2" -n "$1"
+}
+
+poly_user_shell_get() {
+    getent passwd "$1" | cut -d: -f7
+}
+
+poly_user_shell_set() {
+    _sudo "in order to prevent $1 from logging in" \
+          pw usermod -s "$2" -n "$1"
+}
+
+poly_user_in_group_check() {
+    id -Gn "$1" | grep -q "$2" > /dev/null 2>&1
+}
+
+poly_user_in_group_set() {
+    _sudo "Add $1 to the $2 group"\
+          pw groupmod "$2" -m "$1"
+}
+
+poly_user_primary_group_get() {
+    id -gn "$1"
+}
+
+poly_user_primary_group_set() {
+    _sudo "to let the nix daemon use this user for builds (this might seem redundant, but there are two concepts of group membership)" \
+          pw usermod -g "$2" -n "$1"
+
+}
+
+poly_create_build_user() {
+    username=$1
+    uid=$2
+    builder_num=$3
+
+    _sudo "Creating the Nix build user, $username" \
+          pw useradd \
+          -d /var/empty \
+          -c "Nix build user $builder_num" \
+          -g "$NIX_BUILD_GROUP_ID" \
+          -G "$NIX_BUILD_GROUP_NAME" \
+          -s /sbin/nologin \
+          -u "$uid" \
+          -h - \
+          -n "$username"
+}
+
+poly_prepare_to_install() {
+    :
+}

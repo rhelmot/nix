@@ -96,6 +96,14 @@ is_os_darwin() {
     fi
 }
 
+is_os_freebsd() {
+    if [ "$(uname -s)" = "FreeBSD" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 contact_us() {
     echo "You can open an issue at"
     echo "https://github.com/NixOS/nix/issues/new?labels=installer&template=installer.md"
@@ -981,6 +989,10 @@ main() {
         # shellcheck source=./install-systemd-multi-user.sh
         . "$EXTRACTED_NIX_PATH/install-systemd-multi-user.sh" # most of this works on non-systemd distros also
         check_required_system_specific_settings "install-systemd-multi-user.sh"
+    elif is_os_freebsd; then
+        # shellcheck source=./install-freebsd-multi-user.sh
+        . "$EXTRACTED_NIX_PATH/install-freebsd-multi-user.sh"
+        check_required_system_specific_settings "install-freebsd-multi-user.sh"
     else
         failure "Sorry, I don't know what to do on $(uname)"
     fi
