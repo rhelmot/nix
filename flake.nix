@@ -41,6 +41,7 @@
         "armv6l-unknown-linux-gnueabihf"
         "armv7l-unknown-linux-gnueabihf"
         "x86_64-unknown-netbsd"
+        "x86_64-unknown-freebsd"
       ];
 
       # Nix doesn't yet build on this platform, so we put it in a
@@ -269,6 +270,7 @@
           # Cross
           self.hydraJobs.binaryTarballCross."x86_64-linux"."armv6l-unknown-linux-gnueabihf"
           self.hydraJobs.binaryTarballCross."x86_64-linux"."armv7l-unknown-linux-gnueabihf"
+          self.hydraJobs.binaryTarballCross."x86_64-linux"."x86_64-unknown-freebsd"
         ];
         installerScriptForGHA = installScriptFor [
           # Native
