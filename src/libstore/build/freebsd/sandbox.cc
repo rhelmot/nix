@@ -1,5 +1,6 @@
 #if __FreeBSD__
 
+#include "file-system.hh"
 #include "sandbox.hh"
 
 namespace nix {
@@ -76,9 +77,10 @@ namespace nix {
 
             // mount points must exist and be the right type
             if (S_ISDIR(stat_buf.st_mode)) {
-                mkdir(path.c_str(), 0555);
+                createDirs(path);
             } else {
-                close(open(path.c_str(), O_CREAT | O_RDONLY, 0444));
+                createDirs(dirOf(path));
+                writeFile(path, "");
             }
 
             struct iovec iov[8] = {
