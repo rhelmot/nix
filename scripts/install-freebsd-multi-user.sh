@@ -7,16 +7,26 @@ set -o pipefail
 export NIX_FIRST_BUILD_UID="${NIX_FIRST_BUILD_UID:-30001}"
 export NIX_BUILD_USER_NAME_TEMPLATE="nixbld%d"
 
+readonly PREFIX=/usr/local
+readonly SERVICE_SRC=/share/rc/nix-daemon.sh
+readonly SERVICE_DEST=/etc/rc.d/nix-daemon
+
 poly_cure_artifacts() {
     :
 }
 
 poly_service_installed_check() {
-    [ -e /etc/rc.d/nix_daemon ]
+    [ -e /usr/local/etc/rc.d/nix_daemon ]
 }
 
 poly_service_uninstall_directions() {
-    :
+        cat <<EOF
+$1. Delete the rc script
+
+  sudo service stop nix-daemon
+  sudo sysrc -x nix_daemon_enable nix_daemon_log_file
+  sudo rm -rf $PREFIX$SERVICE_DEST
+EOF
 }
 
 poly_service_setup_note() {
@@ -24,13 +34,21 @@ poly_service_setup_note() {
 }
 
 poly_extra_try_me_commands() {
-    cat <<EOF
-  $ sudo nix-daemon
-EOF
+    :
 }
 
 poly_configure_nix_daemon_service() {
-    reminder "I don't support your init system yet; you may want to add nix-daemon manually."
+    if [ -e $PREFIX/etc/rc.d ]; then
+        task "Setting up the nix-daemon rc.d service"
+
+        _sudo "to set up the nix-daemon service" \
+              ln -s "/nix/var/nix/profiles/default$SERVICE_SRC" $PREFIX$SERVICE_DEST
+
+        _sudo "to enable the nix-daemon at startup" \
+              sysrc nix_daemon_enable=YES
+    else
+        reminder "I don't support your init system yet; you may want to add nix-daemon manually."
+    fi
 }
 
 poly_group_exists() {
