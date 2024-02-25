@@ -1,35 +1,35 @@
 #!/bin/sh
 
-# PROVIDE: nix-daemon
+# PROVIDE: nix_daemon
 # REQUIRE: DAEMON
 # BEFORE: LOGIN
 # KEYWORD: shutdown
 
 . /etc/rc.subr
 
-name=nix-daemon
+name=nix_daemon
 rcvar=nix_daemon_enable
 
 load_rc_config $name
 
 : ${nix_daemon_enable:="NO"}
-: ${nix_daemon_log_file=/var/log/nix-daemon.log}
+: ${nix_daemon_log_file:="/var/log/nix-daemon.log"}
 
-pidfile=/var/run/nix-daemon.pid
+pidfile="/var/run/nix-daemon.pid"
 procname="@bindir@/nix-daemon"
 command="/usr/sbin/daemon"
-command_args="-cf -p ${pidfile} ${procname} ${nix_daemon_log_file:+>${nix_daemon_log_file} 2>&1} ${nix_daemon_args}"
+command_args="-c -p ${pidfile} ${procname} ${nix_daemon_log_file:+>${nix_daemon_log_file} 2>&1} ${nix_daemon_args}"
 
 start_precmd=nix_daemon_startprecmd
 
 nix_daemon_startprecmd()
 {
         if [ ! -e ${pidfile} ]; then
-                install -o root -g root /dev/null ${pidfile};
+                install -o root -g wheel /dev/null ${pidfile};
         fi
 
         if [ ! -e ${nix_daemon_log_file} ]; then
-                install -o root -g root /dev/null ${nix_daemon_log_file};
+                install -o root -g wheel /dev/null ${nix_daemon_log_file};
         fi
 }
 
