@@ -34,16 +34,16 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1705033721,
-        "narHash": "sha256-K5eJHmL1/kev6WuqyqqbS1cdNnSidIZ3jeqJ7GbrYnQ=",
-        "owner": "NixOS",
+        "lastModified": 1709331635,
+        "narHash": "sha256-i7lFNV73pWXPAUHQuTBW/LmqWKKM82aHV0SoLiVc3xQ=",
+        "owner": "rhelmot",
         "repo": "nixpkgs",
-        "rev": "a1982c92d8980a0114372973cbdfe0a307f1bdea",
+        "rev": "afb8a228a66c9f55c5fdde0a93262cb4b57c9ea4",
         "type": "github"
       },
       "original": {
-        "owner": "NixOS",
-        "ref": "nixos-23.05-small",
+        "owner": "rhelmot",
+        "ref": "freebsd-staging",
         "repo": "nixpkgs",
         "type": "github"
       }
