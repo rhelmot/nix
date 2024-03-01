@@ -9,7 +9,8 @@ export NIX_BUILD_USER_NAME_TEMPLATE="nixbld%d"
 
 readonly PREFIX=/usr/local
 readonly SERVICE_SRC=/share/rc/nix-daemon.sh
-readonly SERVICE_DEST=/etc/rc.d/nix-daemon
+readonly SERVICE_DEST=$PREFIX/etc/rc.d/nix-daemon
+readonly SERVICE_BASE="$(basename $SERVICE_DEST)"
 
 poly_cure_artifacts() {
     :
@@ -25,7 +26,7 @@ $1. Delete the rc script
 
   sudo service stop nix-daemon
   sudo sysrc -x nix_daemon_enable nix_daemon_log_file
-  sudo rm -rf $PREFIX$SERVICE_DEST
+  sudo rm -rf $SERVICE_DEST
 EOF
 }
 
@@ -38,11 +39,16 @@ poly_extra_try_me_commands() {
 }
 
 poly_configure_nix_daemon_service() {
-    if [ -e $PREFIX/etc/rc.d ]; then
+    if [ -e /etc/freebsd-update.conf ]; then
         task "Setting up the nix-daemon rc.d service"
 
+        if ! [ -e "$SERVICE_BASE" ]; then
+            _sudo "to create $SERVICE_BASE" \
+                mkdir -p "$SERVICE_BASE"
+        fi
+
         _sudo "to set up the nix-daemon service" \
-              ln -s "/nix/var/nix/profiles/default$SERVICE_SRC" $PREFIX$SERVICE_DEST
+              ln -s "/nix/var/nix/profiles/default$SERVICE_SRC" $SERVICE_DEST
 
         _sudo "to enable the nix-daemon at startup" \
               sysrc nix_daemon_enable=YES
