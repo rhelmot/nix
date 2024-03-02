@@ -25,7 +25,8 @@ makefiles = \
   misc/zsh/local.mk \
   misc/systemd/local.mk \
   misc/launchd/local.mk \
-  misc/upstart/local.mk
+  misc/upstart/local.mk \
+  misc/freebsd-rc/local.mk
 endif
 
 ifeq ($(ENABLE_UNIT_TESTS), yes)

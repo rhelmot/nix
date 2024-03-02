@@ -10,7 +10,7 @@ export NIX_BUILD_USER_NAME_TEMPLATE="nixbld%d"
 readonly PREFIX=/usr/local
 readonly SERVICE_SRC=/share/rc/nix-daemon.sh
 readonly SERVICE_DEST=$PREFIX/etc/rc.d/nix-daemon
-readonly SERVICE_BASE="$(basename $SERVICE_DEST)"
+readonly SERVICE_BASE="$(dirname $SERVICE_DEST)"
 
 poly_cure_artifacts() {
     :
@@ -52,6 +52,9 @@ poly_configure_nix_daemon_service() {
 
         _sudo "to enable the nix-daemon at startup" \
               sysrc nix_daemon_enable=YES
+
+        _sudo "to start the nix-daemon service" \
+            service nix-daemon restart
     else
         reminder "I don't support your init system yet; you may want to add nix-daemon manually."
     fi
