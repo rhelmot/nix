@@ -186,7 +186,7 @@ void LocalDerivationGoal::tryLocalBuild()
 
     auto & localStore = getLocalStore();
     if (localStore.storeDir != localStore.realStoreDir.get()) {
-        #if __linux__
+        #if __linux__ || __FreeBSD__
             useChroot = true;
         #else
             throw Error("building using a diverted store is not supported on this platform");
