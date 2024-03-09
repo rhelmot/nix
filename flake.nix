@@ -188,6 +188,8 @@
               perl-bindings = final.nix-perl-bindings;
             };
 
+          nixVersions = prev.nixVersions // { unstable = final.nix; };
+
           nix-perl-bindings = final.callPackage ./perl {
             inherit fileset stdenv;
           };
