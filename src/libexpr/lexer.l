@@ -33,33 +33,16 @@ namespace nix {
 
 static void initLoc(YYLTYPE * loc)
 {
-    loc->first_line = loc->last_line = 1;
-    loc->first_column = loc->last_column = 1;
+    loc->first_line = loc->last_line = 0;
+    loc->first_column = loc->last_column = 0;
 }
 
 static void adjustLoc(YYLTYPE * loc, const char * s, size_t len)
 {
     loc->stash();
 
-    loc->first_line = loc->last_line;
     loc->first_column = loc->last_column;
-
-    for (size_t i = 0; i < len; i++) {
-       switch (*s++) {
-       case '\r':
-           if (*s == '\n') { /* cr/lf */
-               i++;
-               s++;
-           }
-           /* fall through */
-       case '\n':
-           ++loc->last_line;
-           loc->last_column = 1;
-           break;
-       default:
-           ++loc->last_column;
-       }
-    }
+    loc->last_column += len;
 }
 
 
@@ -93,6 +76,9 @@ static StringToken unescapeStr(SymbolTable & symbols, char * s, size_t length)
 
 
 }
+
+// yacc generates code that uses unannotated fallthrough.
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 
 #define YY_USER_INIT initLoc(yylloc)
 #define YY_USER_ACTION adjustLoc(yylloc, yytext, yyleng);
@@ -146,9 +132,9 @@ or          { return OR_KW; }
               try {
                   yylval->n = boost::lexical_cast<int64_t>(yytext);
               } catch (const boost::bad_lexical_cast &) {
-                  throw ParseError({
-                      .msg = hintfmt("invalid integer '%1%'", yytext),
-                      .errPos = state->positions[CUR_POS],
+                  throw ParseError(ErrorInfo{
+                      .msg = HintFmt("invalid integer '%1%'", yytext),
+                      .pos = state->positions[CUR_POS],
                   });
               }
               return INT_LIT;
@@ -156,9 +142,9 @@ or          { return OR_KW; }
 {FLOAT}     { errno = 0;
               yylval->nf = strtod(yytext, 0);
               if (errno != 0)
-                  throw ParseError({
-                      .msg = hintfmt("invalid float '%1%'", yytext),
-                      .errPos = state->positions[CUR_POS],
+                  throw ParseError(ErrorInfo{
+                      .msg = HintFmt("invalid float '%1%'", yytext),
+                      .pos = state->positions[CUR_POS],
                   });
               return FLOAT_LIT;
             }
@@ -285,9 +271,9 @@ or          { return OR_KW; }
 
 <INPATH_SLASH>{ANY} |
 <INPATH_SLASH><<EOF>> {
-  throw ParseError({
-      .msg = hintfmt("path has a trailing slash"),
-      .errPos = state->positions[CUR_POS],
+  throw ParseError(ErrorInfo{
+      .msg = HintFmt("path has a trailing slash"),
+      .pos = state->positions[CUR_POS],
   });
 }
 

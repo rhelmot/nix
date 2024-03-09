@@ -43,6 +43,11 @@ unsigned int getMaxCPU()
 
         auto cpuMax = readFile(cpuFile);
         auto cpuMaxParts = tokenizeString<std::vector<std::string>>(cpuMax, " \n");
+
+        if (cpuMaxParts.size() != 2) {
+            return 0;
+        }
+
         auto quota = cpuMaxParts[0];
         auto period = cpuMaxParts[1];
         if (quota != "max")
@@ -68,7 +73,7 @@ void setStackSize(rlim_t stackSize)
         if (setrlimit(RLIMIT_STACK, &limit) != 0) {
             logger->log(
                 lvlError,
-                hintfmt(
+                HintFmt(
                     "Failed to increase stack size from %1% to %2% (maximum allowed stack size: %3%): %4%",
                     savedStackSize,
                     stackSize,

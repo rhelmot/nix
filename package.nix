@@ -25,6 +25,7 @@
 , libgit2
 , libseccomp
 , libsodium
+, man
 , lowdown
 , mdbook
 , mdbook-linkcheck
@@ -156,7 +157,7 @@ in {
     in
       fileset.toSource {
         root = ./.;
-        fileset = fileset.intersect baseFiles (fileset.unions ([
+        fileset = fileset.intersection baseFiles (fileset.unions ([
           # For configure
           ./.version
           ./configure.ac
@@ -211,6 +212,11 @@ in {
     (lib.getBin lowdown)
     mdbook
     mdbook-linkcheck
+  ] ++ lib.optionals doInstallCheck [
+    git
+    mercurial
+    openssh
+    man # for testing `nix-* --help`
   ] ++ lib.optionals (doInstallCheck || enableManual) [
     jq # Also for custom mdBook preprocessor.
   ] ++ lib.optional stdenv.hostPlatform.isLinux util-linux
@@ -251,12 +257,6 @@ in {
 
   dontBuild = !attrs.doBuild;
   doCheck = attrs.doCheck;
-
-  nativeCheckInputs = [
-    git
-    mercurial
-    openssh
-  ];
 
   disallowedReferences = [ boost ];
 
@@ -354,9 +354,15 @@ in {
 
   # Needed for tests if we are not doing a build, but testing existing
   # built Nix.
-  preInstallCheck = lib.optionalString (! doBuild) ''
-    mkdir -p src/nix-channel
-  '';
+  preInstallCheck =
+    lib.optionalString (! doBuild) ''
+      mkdir -p src/nix-channel
+    ''
+    # See https://github.com/NixOS/nix/issues/2523
+    # Occurs often in tests since https://github.com/NixOS/nix/pull/9900
+    + lib.optionalString stdenv.hostPlatform.isDarwin ''
+      export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+    '';
 
   separateDebugInfo = !stdenv.hostPlatform.isStatic;
 

@@ -143,7 +143,7 @@ static void getAllExprs(EvalState & state,
             }
             /* Load the expression on demand. */
             auto vArg = state.allocValue();
-            vArg->mkString(path2.path.abs());
+            vArg->mkPath(path2);
             if (seen.size() == maxAttrs)
                 throw Error("too many Nix expressions in directory '%1%'", path);
             attrs.alloc(attrName).mkApp(&state.getBuiltin("import"), vArg);
@@ -413,7 +413,7 @@ static void queryInstSources(EvalState & state,
             loadSourceExpr(state, *instSource.nixExprPath, vArg);
 
             for (auto & i : args) {
-                Expr * eFun = state.parseExprFromString(i, state.rootPath(CanonPath::fromCwd()));
+                Expr * eFun = state.parseExprFromString(i, state.rootPath("."));
                 Value vFun, vTmp;
                 state.eval(eFun, vFun);
                 vTmp.mkApp(&vFun, &vArg);

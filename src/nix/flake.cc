@@ -88,17 +88,19 @@ public:
         expectArgs({
             .label="inputs",
             .optional=true,
-            .handler={[&](std::string inputToUpdate){
-                InputPath inputPath;
-                try {
-                    inputPath = flake::parseInputPath(inputToUpdate);
-                } catch (Error & e) {
-                    warn("Invalid flake input '%s'. To update a specific flake, use 'nix flake update --flake %s' instead.", inputToUpdate, inputToUpdate);
-                    throw e;
+            .handler={[&](std::vector<std::string> inputsToUpdate){
+                for (auto inputToUpdate : inputsToUpdate) {
+                    InputPath inputPath;
+                    try {
+                        inputPath = flake::parseInputPath(inputToUpdate);
+                    } catch (Error & e) {
+                        warn("Invalid flake input '%s'. To update a specific flake, use 'nix flake update --flake %s' instead.", inputToUpdate, inputToUpdate);
+                        throw e;
+                    }
+                    if (lockFlags.inputUpdates.contains(inputPath))
+                        warn("Input '%s' was specified multiple times. You may have done this by accident.");
+                    lockFlags.inputUpdates.insert(inputPath);
                 }
-                if (lockFlags.inputUpdates.contains(inputPath))
-                    warn("Input '%s' was specified multiple times. You may have done this by accident.");
-                lockFlags.inputUpdates.insert(inputPath);
             }},
             .completer = {[&](AddCompletions & completions, size_t, std::string_view prefix) {
                 completeFlakeInputPath(completions, getEvalState(), getFlakeRefsForCompletion(), prefix);
@@ -205,6 +207,9 @@ struct CmdFlakeMetadata : FlakeCommand, MixJSON
         auto lockedFlake = lockFlake();
         auto & flake = lockedFlake.flake;
 
+        // Currently, all flakes are in the Nix store via the rootFS accessor.
+        auto storePath = store->printStorePath(store->toStorePath(flake.path.path.abs()).first);
+
         if (json) {
             nlohmann::json j;
             if (flake.description)
@@ -214,6 +219,8 @@ struct CmdFlakeMetadata : FlakeCommand, MixJSON
             j["resolvedUrl"] = flake.resolvedRef.to_string();
             j["resolved"] = fetchers::attrsToJSON(flake.resolvedRef.toAttrs());
             j["url"] = flake.lockedRef.to_string(); // FIXME: rename to lockedUrl
+            // "locked" is a misnomer - this is the result of the
+            // attempt to lock.
             j["locked"] = fetchers::attrsToJSON(flake.lockedRef.toAttrs());
             if (auto rev = flake.lockedRef.input.getRev())
                 j["revision"] = rev->to_string(HashFormat::Base16, false);
@@ -223,23 +230,24 @@ struct CmdFlakeMetadata : FlakeCommand, MixJSON
                 j["revCount"] = *revCount;
             if (auto lastModified = flake.lockedRef.input.getLastModified())
                 j["lastModified"] = *lastModified;
-            j["path"] = store->printStorePath(flake.storePath);
-            j["locks"] = lockedFlake.lockFile.toJSON();
+            j["path"] = storePath;
+            j["locks"] = lockedFlake.lockFile.toJSON().first;
             logger->cout("%s", j.dump());
         } else {
             logger->cout(
                 ANSI_BOLD "Resolved URL:" ANSI_NORMAL "  %s",
                 flake.resolvedRef.to_string());
-            logger->cout(
-                ANSI_BOLD "Locked URL:" ANSI_NORMAL "    %s",
-                flake.lockedRef.to_string());
+            if (flake.lockedRef.input.isLocked())
+                logger->cout(
+                    ANSI_BOLD "Locked URL:" ANSI_NORMAL "    %s",
+                    flake.lockedRef.to_string());
             if (flake.description)
                 logger->cout(
                     ANSI_BOLD "Description:" ANSI_NORMAL "   %s",
                     *flake.description);
             logger->cout(
                 ANSI_BOLD "Path:" ANSI_NORMAL "          %s",
-                store->printStorePath(flake.storePath));
+                storePath);
             if (auto rev = flake.lockedRef.input.getRev())
                 logger->cout(
                     ANSI_BOLD "Revision:" ANSI_NORMAL "      %s",
@@ -411,7 +419,7 @@ struct CmdFlakeCheck : FlakeCommand
                     return storePath;
                 }
             } catch (Error & e) {
-                e.addTrace(resolve(pos), hintfmt("while checking the derivation '%s'", attrPath));
+                e.addTrace(resolve(pos), HintFmt("while checking the derivation '%s'", attrPath));
                 reportError(e);
             }
             return std::nullopt;
@@ -430,7 +438,7 @@ struct CmdFlakeCheck : FlakeCommand
                 }
                 #endif
             } catch (Error & e) {
-                e.addTrace(resolve(pos), hintfmt("while checking the app definition '%s'", attrPath));
+                e.addTrace(resolve(pos), HintFmt("while checking the app definition '%s'", attrPath));
                 reportError(e);
             }
         };
@@ -454,7 +462,7 @@ struct CmdFlakeCheck : FlakeCommand
                 // FIXME: if we have a 'nixpkgs' input, use it to
                 // evaluate the overlay.
             } catch (Error & e) {
-                e.addTrace(resolve(pos), hintfmt("while checking the overlay '%s'", attrPath));
+                e.addTrace(resolve(pos), HintFmt("while checking the overlay '%s'", attrPath));
                 reportError(e);
             }
         };
@@ -465,7 +473,7 @@ struct CmdFlakeCheck : FlakeCommand
                     fmt("checking NixOS module '%s'", attrPath));
                 state->forceValue(v, pos);
             } catch (Error & e) {
-                e.addTrace(resolve(pos), hintfmt("while checking the NixOS module '%s'", attrPath));
+                e.addTrace(resolve(pos), HintFmt("while checking the NixOS module '%s'", attrPath));
                 reportError(e);
             }
         };
@@ -474,6 +482,8 @@ struct CmdFlakeCheck : FlakeCommand
 
         checkHydraJobs = [&](const std::string & attrPath, Value & v, const PosIdx pos) {
             try {
+                Activity act(*logger, lvlInfo, actUnknown,
+                    fmt("checking Hydra job '%s'", attrPath));
                 state->forceAttrs(v, pos, "");
 
                 if (state->isDerivation(v))
@@ -491,7 +501,7 @@ struct CmdFlakeCheck : FlakeCommand
                 }
 
             } catch (Error & e) {
-                e.addTrace(resolve(pos), hintfmt("while checking the Hydra jobset '%s'", attrPath));
+                e.addTrace(resolve(pos), HintFmt("while checking the Hydra jobset '%s'", attrPath));
                 reportError(e);
             }
         };
@@ -506,7 +516,7 @@ struct CmdFlakeCheck : FlakeCommand
                 if (!state->isDerivation(*vToplevel))
                     throw Error("attribute 'config.system.build.toplevel' is not a derivation");
             } catch (Error & e) {
-                e.addTrace(resolve(pos), hintfmt("while checking the NixOS configuration '%s'", attrPath));
+                e.addTrace(resolve(pos), HintFmt("while checking the NixOS configuration '%s'", attrPath));
                 reportError(e);
             }
         };
@@ -540,7 +550,7 @@ struct CmdFlakeCheck : FlakeCommand
                         throw Error("template '%s' has unsupported attribute '%s'", attrPath, name);
                 }
             } catch (Error & e) {
-                e.addTrace(resolve(pos), hintfmt("while checking the template '%s'", attrPath));
+                e.addTrace(resolve(pos), HintFmt("while checking the template '%s'", attrPath));
                 reportError(e);
             }
         };
@@ -554,7 +564,7 @@ struct CmdFlakeCheck : FlakeCommand
                     throw Error("bundler must be a function");
                 // TODO: check types of inputs/outputs?
             } catch (Error & e) {
-                e.addTrace(resolve(pos), hintfmt("while checking the template '%s'", attrPath));
+                e.addTrace(resolve(pos), HintFmt("while checking the template '%s'", attrPath));
                 reportError(e);
             }
         };
@@ -774,7 +784,7 @@ struct CmdFlakeCheck : FlakeCommand
                             warn("unknown flake output '%s'", name);
 
                     } catch (Error & e) {
-                        e.addTrace(resolve(pos), hintfmt("while checking flake output '%s'", name));
+                        e.addTrace(resolve(pos), HintFmt("while checking flake output '%s'", name));
                         reportError(e);
                     }
                 });
@@ -848,10 +858,10 @@ struct CmdFlakeInitCommon : virtual Args, EvalCommand
         auto templateDir = templateDirAttr->getString();
 
         if (!store->isInStore(templateDir))
-            throw TypeError(
+            evalState->error<TypeError>(
                 "'%s' was not found in the Nix store\n"
                 "If you've set '%s' to a string, try using a path instead.",
-                templateDir, templateDirAttr->getAttrPathStr());
+                templateDir, templateDirAttr->getAttrPathStr()).debugThrow();
 
         std::vector<Path> changedFiles;
         std::vector<Path> conflictedFiles;
@@ -1031,7 +1041,9 @@ struct CmdFlakeArchive : FlakeCommand, MixJSON, MixDryRun
 
         StorePathSet sources;
 
-        sources.insert(flake.flake.storePath);
+        auto storePath = store->toStorePath(flake.flake.path.path.abs()).first;
+
+        sources.insert(storePath);
 
         // FIXME: use graph output, handle cycles.
         std::function<nlohmann::json(const Node & node)> traverse;
@@ -1043,7 +1055,7 @@ struct CmdFlakeArchive : FlakeCommand, MixJSON, MixDryRun
                     auto storePath =
                         dryRun
                         ? (*inputNode)->lockedRef.input.computeStorePath(*store)
-                        : (*inputNode)->lockedRef.input.fetch(store).first;
+                        : (*inputNode)->lockedRef.input.fetchToStore(store).first;
                     if (json) {
                         auto& jsonObj3 = jsonObj2[inputName];
                         jsonObj3["path"] = store->printStorePath(storePath);
@@ -1060,7 +1072,7 @@ struct CmdFlakeArchive : FlakeCommand, MixJSON, MixDryRun
 
         if (json) {
             nlohmann::json jsonRoot = {
-                {"path", store->printStorePath(flake.flake.storePath)},
+                {"path", store->printStorePath(storePath)},
                 {"inputs", traverse(*flake.lockFile.root)},
             };
             logger->cout("%s", jsonRoot);
@@ -1321,7 +1333,7 @@ struct CmdFlakeShow : FlakeCommand, MixJSON
                 {
                     auto aType = visitor.maybeGetAttr("type");
                     if (!aType || aType->getString() != "app")
-                        throw EvalError("not an app definition");
+                        state->error<EvalError>("not an app definition").debugThrow();
                     if (json) {
                         j.emplace("type", "app");
                     } else {

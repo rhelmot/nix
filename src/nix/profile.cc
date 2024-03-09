@@ -101,6 +101,15 @@ struct ProfileElement
     }
 };
 
+std::string getNameFromElement(const ProfileElement & element)
+{
+    std::optional<std::string> result = std::nullopt;
+    if (element.source) {
+        result = getNameFromURL(parseURL(element.source->to_string()));
+    }
+    return result.value_or(element.identifier());
+}
+
 struct ProfileManifest
 {
     using ProfileElementName = std::string;
@@ -189,12 +198,8 @@ struct ProfileManifest
 
     void addElement(ProfileElement element)
     {
-        auto name =
-            element.source
-            ? getNameFromURL(parseURL(element.source->to_string()))
-            : std::nullopt;
-        auto name2 = name ? *name : element.identifier();
-        addElement(name2, std::move(element));
+        auto name = getNameFromElement(element);
+        addElement(name, std::move(element));
     }
 
     nlohmann::json toJSON(Store & store) const
@@ -217,6 +222,8 @@ struct ProfileManifest
             es[name] = obj;
         }
         nlohmann::json json;
+        // Only upgrade with great care as changing it can break fresh installs
+        // like in https://github.com/NixOS/nix/issues/10109
         json["version"] = 3;
         json["elements"] = es;
         return json;
@@ -390,7 +397,26 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
 
             element.updateStorePaths(getEvalStore(), store, res);
 
-            manifest.addElement(std::move(element));
+            auto elementName = getNameFromElement(element);
+
+            // Check if the element already exists.
+            auto existingPair = manifest.elements.find(elementName);
+            if (existingPair != manifest.elements.end()) {
+                auto existingElement = existingPair->second;
+                auto existingSource = existingElement.source;
+                auto elementSource = element.source;
+                if (existingSource
+                    && elementSource
+                    && existingElement.priority == element.priority
+                    && existingSource->originalRef == elementSource->originalRef
+                    && existingSource->attrPath == elementSource->attrPath
+                    ) {
+                    warn("'%s' is already installed", elementName);
+                    continue;
+                }
+            }
+
+            manifest.addElement(elementName, std::move(element));
         }
 
         try {
@@ -400,13 +426,13 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
             //       See https://github.com/NixOS/nix/compare/3efa476c5439f8f6c1968a6ba20a31d1239c2f04..1fe5d172ece51a619e879c4b86f603d9495cc102
             auto findRefByFilePath = [&]<typename Iterator>(Iterator begin, Iterator end) {
                 for (auto it = begin; it != end; it++) {
-                    auto & profileElement = it->second;
+                    auto & [name, profileElement] = *it;
                     for (auto & storePath : profileElement.storePaths) {
                         if (conflictError.fileA.starts_with(store->printStorePath(storePath))) {
-                            return std::pair(conflictError.fileA, profileElement.toInstallables(*store));
+                            return std::tuple(conflictError.fileA, name, profileElement.toInstallables(*store));
                         }
                         if (conflictError.fileB.starts_with(store->printStorePath(storePath))) {
-                            return std::pair(conflictError.fileB, profileElement.toInstallables(*store));
+                            return std::tuple(conflictError.fileB, name, profileElement.toInstallables(*store));
                         }
                     }
                 }
@@ -415,9 +441,9 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
             // There are 2 conflicting files. We need to find out which one is from the already installed package and
             // which one is the package that is the new package that is being installed.
             // The first matching package is the one that was already installed (original).
-            auto [originalConflictingFilePath, originalConflictingRefs] = findRefByFilePath(manifest.elements.begin(), manifest.elements.end());
+            auto [originalConflictingFilePath, originalEntryName, originalConflictingRefs] = findRefByFilePath(manifest.elements.begin(), manifest.elements.end());
             // The last matching package is the one that was going to be installed (new).
-            auto [newConflictingFilePath, newConflictingRefs] = findRefByFilePath(manifest.elements.rbegin(), manifest.elements.rend());
+            auto [newConflictingFilePath, newEntryName, newConflictingRefs] = findRefByFilePath(manifest.elements.rbegin(), manifest.elements.rend());
 
             throw Error(
                 "An existing package already provides the following file:\n"
@@ -443,7 +469,7 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
                 "  nix profile install %4% --priority %7%\n",
                 originalConflictingFilePath,
                 newConflictingFilePath,
-                concatStringsSep(" ", originalConflictingRefs),
+                originalEntryName,
                 concatStringsSep(" ", newConflictingRefs),
                 conflictError.priority,
                 conflictError.priority - 1,
@@ -453,55 +479,150 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
     }
 };
 
-class MixProfileElementMatchers : virtual Args
+struct Matcher
 {
-    std::vector<std::string> _matchers;
+    virtual std::string getTitle() = 0;
+    virtual bool matches(const std::string & name, const ProfileElement & element) = 0;
+};
+
+struct RegexMatcher : public Matcher
+{
+    std::regex regex;
+    std::string pattern;
+
+    RegexMatcher(const std::string & pattern) : regex(pattern, std::regex::extended | std::regex::icase), pattern(pattern)
+    { }
+
+    std::string getTitle() override
+    {
+        return fmt("Regex '%s'", pattern);
+    }
+
+    bool matches(const std::string & name, const ProfileElement & element) override
+    {
+        return std::regex_match(element.identifier(), regex);
+    }
+};
+
+struct StorePathMatcher : public Matcher
+{
+    nix::StorePath storePath;
+
+    StorePathMatcher(const nix::StorePath & storePath) : storePath(storePath)
+    { }
+
+    std::string getTitle() override
+    {
+        return fmt("Store path '%s'", storePath.to_string());
+    }
+
+    bool matches(const std::string & name, const ProfileElement & element) override
+    {
+        return element.storePaths.count(storePath);
+    }
+};
+
+struct NameMatcher : public Matcher
+{
+    std::string name;
+
+    NameMatcher(const std::string & name) : name(name)
+    { }
+
+    std::string getTitle() override
+    {
+        return fmt("Package name '%s'", name);
+    }
+
+    bool matches(const std::string & name, const ProfileElement & element) override
+    {
+        return name == this->name;
+    }
+};
+
+struct AllMatcher : public Matcher
+{
+    std::string getTitle() override
+    {
+        return "--all";
+    }
+
+    bool matches(const std::string & name, const ProfileElement & element) override
+    {
+        return true;
+    }
+};
+
+AllMatcher all;
+
+class MixProfileElementMatchers : virtual Args, virtual StoreCommand
+{
+    std::vector<ref<Matcher>> _matchers;
 
 public:
 
     MixProfileElementMatchers()
     {
-        expectArgs("elements", &_matchers);
+        addFlag({
+            .longName = "all",
+            .description = "Match all packages in the profile.",
+            .handler = {[this]() {
+                _matchers.push_back(ref<AllMatcher>(std::shared_ptr<AllMatcher>(&all, [](AllMatcher*) {})));
+            }},
+        });
+        addFlag({
+            .longName = "regex",
+            .description = "A regular expression to match one or more packages in the profile.",
+            .labels = {"pattern"},
+            .handler = {[this](std::string arg) {
+                _matchers.push_back(make_ref<RegexMatcher>(arg));
+            }},
+        });
+        expectArgs({
+            .label = "elements",
+            .optional = true,
+            .handler = {[this](std::vector<std::string> args) {
+                for (auto & arg : args) {
+                    if (auto n = string2Int<size_t>(arg)) {
+                        throw Error("'nix profile' no longer supports indices ('%d')", *n);
+                    } else if (getStore()->isStorePath(arg)) {
+                        _matchers.push_back(make_ref<StorePathMatcher>(getStore()->parseStorePath(arg)));
+                    } else {
+                        _matchers.push_back(make_ref<NameMatcher>(arg));
+                    }
+                }
+            }}
+        });
     }
 
-    struct RegexPattern {
-        std::string pattern;
-        std::regex  reg;
-    };
-    typedef std::variant<Path, RegexPattern> Matcher;
-
-    std::vector<Matcher> getMatchers(ref<Store> store)
-    {
-        std::vector<Matcher> res;
-
-        for (auto & s : _matchers) {
-            if (auto n = string2Int<size_t>(s))
-                throw Error("'nix profile' no longer supports indices ('%d')", *n);
-            else if (store->isStorePath(s))
-                res.push_back(s);
-            else
-                res.push_back(RegexPattern{s,std::regex(s, std::regex::extended | std::regex::icase)});
+    std::set<std::string> getMatchingElementNames(ProfileManifest & manifest) {
+        if (_matchers.empty()) {
+            throw UsageError("No packages specified.");
         }
 
-        return res;
-    }
+        if (std::find_if(_matchers.begin(), _matchers.end(), [](const ref<Matcher> & m) { return m.dynamic_pointer_cast<AllMatcher>(); }) != _matchers.end() && _matchers.size() > 1) {
+            throw UsageError("--all cannot be used with package names or regular expressions.");
+        }
 
-    bool matches(
-        const Store & store,
-        const std::string & name,
-        const ProfileElement & element,
-        const std::vector<Matcher> & matchers)
-    {
-        for (auto & matcher : matchers) {
-            if (auto path = std::get_if<Path>(&matcher)) {
-                if (element.storePaths.count(store.parseStorePath(*path))) return true;
-            } else if (auto regex = std::get_if<RegexPattern>(&matcher)) {
-                if (std::regex_match(name, regex->reg))
-                    return true;
+        if (manifest.elements.empty()) {
+            warn("There are no packages in the profile.");
+            return {};
+        }
+
+        std::set<std::string> result;
+        for (auto & matcher : _matchers) {
+            bool foundMatch = false;
+            for (auto & [name, element] : manifest.elements) {
+                if (matcher->matches(name, element)) {
+                    result.insert(name);
+                    foundMatch = true;
+                }
+            }
+            if (!foundMatch) {
+                warn("%s does not match any packages in the profile.", matcher->getTitle());
             }
         }
-
-        return false;
+        return result;
     }
 };
 
@@ -523,16 +644,19 @@ struct CmdProfileRemove : virtual EvalCommand, MixDefaultProfile, MixProfileElem
     {
         ProfileManifest oldManifest(*getEvalState(), *profile);
 
-        auto matchers = getMatchers(store);
+        ProfileManifest newManifest = oldManifest;
 
-        ProfileManifest newManifest;
+        auto matchingElementNames = getMatchingElementNames(oldManifest);
 
-        for (auto & [name, element] : oldManifest.elements) {
-            if (!matches(*store, name, element, matchers)) {
-                newManifest.elements.insert_or_assign(name, std::move(element));
-            } else {
-                notice("removing '%s'", element.identifier());
-            }
+        if (matchingElementNames.empty()) {
+            warn ("No packages to remove. Use 'nix profile list' to see the current profile.");
+            return;
+        }
+
+        for (auto & name : matchingElementNames) {
+            auto & element = oldManifest.elements[name];
+            notice("removing '%s'", element.identifier());
+            newManifest.elements.erase(name);
         }
 
         auto removedCount = oldManifest.elements.size() - newManifest.elements.size();
@@ -540,16 +664,6 @@ struct CmdProfileRemove : virtual EvalCommand, MixDefaultProfile, MixProfileElem
             removedCount,
             newManifest.elements.size());
 
-        if (removedCount == 0) {
-            for (auto matcher: matchers) {
-                if (const Path * path = std::get_if<Path>(&matcher)) {
-                    warn("'%s' does not match any paths", *path);
-                } else if (const RegexPattern * regex = std::get_if<RegexPattern>(&matcher)) {
-                    warn("'%s' does not match any packages", regex->pattern);
-                }
-            }
-            warn ("Use 'nix profile list' to see the current profile.");
-        }
         updateProfile(newManifest.build(store));
     }
 };
@@ -572,20 +686,20 @@ struct CmdProfileUpgrade : virtual SourceExprCommand, MixDefaultProfile, MixProf
     {
         ProfileManifest manifest(*getEvalState(), *profile);
 
-        auto matchers = getMatchers(store);
-
         Installables installables;
         std::vector<ProfileElement *> elems;
 
-        auto matchedCount = 0;
         auto upgradedCount = 0;
 
-        for (auto & [name, element] : manifest.elements) {
-            if (!matches(*store, name, element, matchers)) {
-                continue;
-            }
+        auto matchingElementNames = getMatchingElementNames(manifest);
 
-            matchedCount++;
+        if (matchingElementNames.empty()) {
+            warn("No packages to upgrade. Use 'nix profile list' to see the current profile.");
+            return;
+        }
+
+        for (auto & name : matchingElementNames) {
+            auto & element = manifest.elements[name];
 
             if (!element.source) {
                 warn(
@@ -624,7 +738,9 @@ struct CmdProfileUpgrade : virtual SourceExprCommand, MixDefaultProfile, MixProf
             assert(infop);
             auto & info = *infop;
 
-            if (element.source->lockedRef == info.flake.lockedRef) continue;
+            if (info.flake.lockedRef.input.isLocked()
+                && element.source->lockedRef == info.flake.lockedRef)
+                continue;
 
             printInfo("upgrading '%s' from flake '%s' to '%s'",
                 element.source->attrPath, element.source->lockedRef, info.flake.lockedRef);
@@ -641,18 +757,8 @@ struct CmdProfileUpgrade : virtual SourceExprCommand, MixDefaultProfile, MixProf
         }
 
         if (upgradedCount == 0) {
-            if (matchedCount == 0) {
-                for (auto & matcher : matchers) {
-                    if (const Path * path = std::get_if<Path>(&matcher)) {
-                        warn("'%s' does not match any paths", *path);
-                    } else if (const RegexPattern * regex = std::get_if<RegexPattern>(&matcher)) {
-                        warn("'%s' does not match any packages", regex->pattern);
-                    }
-                }
-            } else {
-                warn("Found some packages but none of them could be upgraded.");
-            }
-            warn ("Use 'nix profile list' to see the current profile.");
+            warn("Found some packages but none of them could be upgraded.");
+            return;
         }
 
         auto builtPaths = builtPathsPerInstallable(
