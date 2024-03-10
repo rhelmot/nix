@@ -341,24 +341,6 @@ Roots LocalStore::findRoots(bool censor)
 
 typedef std::unordered_map<Path, std::unordered_set<std::string>> UncheckedRoots;
 
-static void readProcLink(const std::string & file, UncheckedRoots & roots)
-{
-    constexpr auto bufsiz = PATH_MAX;
-    char buf[bufsiz];
-    auto res = readlink(file.c_str(), buf, bufsiz);
-    if (res == -1) {
-        if (errno == ENOENT || errno == EACCES || errno == ESRCH)
-            return;
-        throw SysError("reading symlink");
-    }
-    if (res == bufsiz) {
-        throw Error("overly long symlink starting with '%1%'", std::string_view(buf, bufsiz));
-    }
-    if (res > 0 && buf[0] == '/')
-        roots[std::string(static_cast<char *>(buf), res)]
-            .emplace(file);
-}
-
 static std::string quoteRegexChars(const std::string & raw)
 {
     static auto specialRegex = std::regex(R"([.^$\\*+?()\[\]{}|])");
@@ -378,6 +360,25 @@ static void readFileRoots(const char * path, UncheckedRoots & roots)
 #endif
 
 #if defined(__FreeBSD__)
+static void readSysctlRoots(const char * name, UncheckedRoots & roots)
+{
+    size_t len = 0;
+    std::string value;
+    if (int err = sysctlbyname(name, NULL, &len, NULL, 0) < 0) {
+        if (err == ENOENT || err == EACCES) return;
+        else throw SysError(err, "sysctlbyname %1%", name);
+    }
+
+    value.resize(len, ' ');
+    if (int err = sysctlbyname(name, value.data(), &len, NULL, 0) < 0) {
+        if (err == ENOENT || err == EACCES) return;
+        else throw SysError(err, "sysctlbyname %1%", name);
+    }
+
+    for(auto & path : tokenizeString<Strings>(value, ";"))
+        roots[path].emplace(fmt("{{sysctl:%1%}}", name));
+}
+
 struct ProcstatDeleter
 {
     void operator()(struct procstat *ps) {
@@ -463,6 +464,24 @@ static void readProcstatRoots(const std::string & storeDir, UncheckedRoots & roo
     }
 }
 #else
+
+static void readProcLink(const std::string & file, UncheckedRoots & roots)
+{
+    constexpr auto bufsiz = PATH_MAX;
+    char buf[bufsiz];
+    auto res = readlink(file.c_str(), buf, bufsiz);
+    if (res == -1) {
+        if (errno == ENOENT || errno == EACCES || errno == ESRCH)
+            return;
+        throw SysError("reading symlink");
+    }
+    if (res == bufsiz) {
+        throw Error("overly long symlink starting with '%1%'", std::string_view(buf, bufsiz));
+    }
+    if (res > 0 && buf[0] == '/')
+        roots[std::string(static_cast<char *>(buf), res)]
+            .emplace(file);
+}
 
 static void readProcfsRoots(const std::string & storeDir, UncheckedRoots & roots)
 {
@@ -560,6 +579,8 @@ void LocalStore::findRuntimeRoots(Roots & roots, bool censor)
     readFileRoots("/proc/sys/kernel/modprobe", unchecked);
     readFileRoots("/proc/sys/kernel/fbsplash", unchecked);
     readFileRoots("/proc/sys/kernel/poweroff_cmd", unchecked);
+#elif defined(__FreeBSD__)
+    readSysctlRoots("kern.module_path", unchecked);
 #endif
 
     for (auto & [target, links] : unchecked) {
