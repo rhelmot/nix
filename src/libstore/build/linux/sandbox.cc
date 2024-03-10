@@ -4,6 +4,8 @@
 #include "finally.hh"
 #include "worker.hh"
 
+#include <grp.h>
+
 namespace nix {
 
 static void chmod_(const Path & path, mode_t mode)
