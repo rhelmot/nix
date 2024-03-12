@@ -411,7 +411,7 @@ static void readProcstatRoots(const std::string & storeDir, UncheckedRoots & roo
 
 
     unsigned int numprocs = 0;
-    procs.reset(procstat_getprocs(ps.get(), KERN_PROC_ALL, 0, &numprocs));
+    procs.reset(procstat_getprocs(ps.get(), KERN_PROC_PROC, 0, &numprocs));
     if (!procs || numprocs == 0) {
         throw SysError("procstat_getprocs");
     };
@@ -445,10 +445,10 @@ static void readProcstatRoots(const std::string & storeDir, UncheckedRoots & roo
             else
                 role = fmt("fd/%1%", file->fs_fd);
 
-            roots[file->fs_path].emplace(fmt("{{procstat:%1%/%2%}}", procs[procidx].ki_pid, role));
+            roots[file->fs_path].emplace(fmt("{procstat:%1%/%2%}", procs[procidx].ki_pid, role));
         }
 
-        auto env_name = fmt("{{procstat:%1%/env}}", procs[procidx].ki_pid);
+        auto env_name = fmt("{procstat:%1%/env}", procs[procidx].ki_pid);
         // No need to free, the buffer is reused on next call and deallocated in procstat_close
         char **env = procstat_getenvv(ps.get(), &procs[procidx], 0);
         if (env == NULL)

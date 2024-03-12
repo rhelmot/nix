@@ -241,7 +241,7 @@ in {
     gtest
     rapidcheck
   ] ++ lib.optional stdenv.isLinux libseccomp
-    ++ lib.optional stdenv.isFreeBSD freebsd.libjail
+    ++ lib.optionals stdenv.isFreeBSD [ freebsd.libjail freebsd.libprocstat ]
     ++ lib.optional stdenv.hostPlatform.isx86_64 libcpuid
     # There have been issues building these dependencies
     ++ lib.optional (stdenv.hostPlatform == stdenv.buildPlatform && (stdenv.isLinux || stdenv.isDarwin))
