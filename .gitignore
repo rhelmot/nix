@@ -110,6 +110,7 @@ perl/Makefile.config
 /perl/lib/Nix/Config.pm
 /perl/lib/Nix/Store.cc
 
+/misc/freebsd-rc/nix-daemon.sh
 /misc/systemd/nix-daemon.service
 /misc/systemd/nix-daemon.socket
 /misc/systemd/nix-daemon.conf
