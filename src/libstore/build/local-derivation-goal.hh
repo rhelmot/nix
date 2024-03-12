@@ -77,8 +77,6 @@ struct LocalDerivationGoal : public DerivationGoal
      */
     std::shared_ptr<AutoDelete> autoDelChroot;
 #if __FreeBSD__
-    /* Destructors happen in reverse order from declaration */
-    std::shared_ptr<AutoRemoveJail> autoDelJail;
     std::vector<std::shared_ptr<AutoUnmount>> autoDelMounts;
 #endif
 

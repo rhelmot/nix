@@ -163,35 +163,6 @@ void unshareFilesystem()
 #endif
 }
 
-#if __FreeBSD__
-AutoRemoveJail::AutoRemoveJail() : del{false} {}
-
-AutoRemoveJail::AutoRemoveJail(int jid) : jid(jid), del(true) {}
-
-AutoRemoveJail::~AutoRemoveJail()
-{
-    try {
-        if (del) {
-            if (jail_remove(jid) < 0) {
-                throw SysError("Failed to remove jail %1%", jid);
-            }
-        }
-    } catch (...) {
-        ignoreException();
-    }
-}
-
-void AutoRemoveJail::cancel()
-{
-    del = false;
-}
-
-void AutoRemoveJail::reset(int j) {
-    del = true;
-    jid = j;
-}
-#endif
-
 //////////////////////////////////////////////////////////////////////
 
 }

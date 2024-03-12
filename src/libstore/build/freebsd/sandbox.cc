@@ -113,49 +113,64 @@ void LocalDerivationGoal::createChild(const std::string &slaveName) {
         throw SysError("Failed to set up isolated users");
     }
 
-    int jid;
+    pid = startProcess([&]() {
+        openSlave(slaveName);
+        runChild();
+    });
+}
 
+void LocalDerivationGoal::enterJail() {
     if (privateNetwork) {
-         jid = jail_setv(JAIL_CREATE,
-                "persist", "true",
+         if (jail_setv(JAIL_CREATE | JAIL_ATTACH,
                 "path", chrootRootDir.c_str(),
                 "devfs_ruleset", "4",
+                "host.hostname", "localhost",
                 "vnet", "new",
-                "host.hostname", "nixbsd",
                 NULL
-        );
-        if (jid < 0) {
+        ) < 0) {
             throw SysError("Failed to create jail (isolated network)");
         }
-        autoDelJail = std::make_shared<AutoRemoveJail>(jid);
-
-        if (system(("ifconfig -j " + std::to_string(jid) + " lo0 inet 127.0.0.1/8 up").c_str()) != 0) {
-            throw SysError("Failed to set up isolated network");
-        }
     } else {
-        jid = jail_setv(JAIL_CREATE,
-                "persist", "true",
+        if (jail_setv(JAIL_CREATE | JAIL_ATTACH,
                 "path", chrootRootDir.c_str(),
                 "devfs_ruleset", "4",
+                "host.hostname", "localhost",
                 "ip4", "inherit",
                 "ip6", "inherit",
                 "allow.raw_sockets", "true",
-                "host.hostname", "nixbsd",
                 NULL
-        );
-        if (jid < 0) {
-            throw SysError("Failed to create jail (fixed-derivation)");
+        ) < 0) {
+            throw SysError("Failed to create jail (fixed-output derivation)");
         }
-        autoDelJail = std::make_shared<AutoRemoveJail>(jid);
     }
 
-    pid = startProcess([&]() {
-        openSlave(slaveName);
-        if (jail_attach(jid) < 0) {
-            throw SysError("Failed to attach to jail");
-        }
-        runChild();
-    });
+    if (privateNetwork) {
+        AutoCloseFD fd(socket(PF_INET, SOCK_DGRAM, 0));
+        if (!fd) throw SysError("cannot open IP socket");
+
+        struct ifreq ifr;
+        strcpy(ifr.ifr_name, "lo0");
+        ifr.ifr_flags = IFF_UP | IFF_LOOPBACK;
+        if (ioctl(fd.get(), SIOCSIFFLAGS, &ifr) == -1)
+            throw SysError("cannot set loopback interface flags");
+
+        struct ifaliasreq ifa;
+        strcpy(ifa.ifra_name, "lo0");
+        ifa.ifra_addr.sa_len = 6;
+        ifa.ifra_addr.sa_family = AF_INET;
+        memcpy(ifa.ifra_addr.sa_data, new uint8_t[]{ 127, 0, 0, 1 }, 4);
+
+        ifa.ifra_broadaddr.sa_len = 6;
+        ifa.ifra_broadaddr.sa_family = AF_INET;
+        memcpy(ifa.ifra_broadaddr.sa_data, new uint8_t[]{ 127, 0, 0, 1 }, 4);
+
+        ifa.ifra_mask.sa_len = 6;
+        ifa.ifra_mask.sa_family = AF_INET;
+        memcpy(ifa.ifra_mask.sa_data, new uint8_t[]{ 255, 0, 0, 0 }, 4);
+
+        if (ioctl(fd.get(), SIOCAIFADDR, &ifa) == -1)
+            throw SysError("cannot add loopback interface address");
+    }
 }
 
 }
