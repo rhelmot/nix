@@ -74,7 +74,7 @@ esac
 # FreeBSD-specific stuff.
 case "$host_os" in
   freebsd*)
-    LDFLAGS="-ljail $LDFLAGS"
+    LDFLAGS="-ljail -lprocstat $LDFLAGS"
     ;;
 esac
 
