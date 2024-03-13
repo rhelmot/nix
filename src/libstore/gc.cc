@@ -5,20 +5,9 @@
 #include "unix-domain-socket.hh"
 #include "signals.hh"
 
-#if !defined(__linux__) && !defined(__FreeBSD__)
+#if !defined(__linux__)
 // For shelling out to lsof
 # include "processes.hh"
-#endif
-
-#if defined(__FreeBSD__)
-extern "C" {
-# include <sys/param.h>
-# include <sys/queue.h>
-# include <sys/socket.h>
-# include <sys/sysctl.h>
-# include <sys/user.h>
-# include <libprocstat.h>
-}
 #endif
 
 #include <functional>
@@ -37,7 +26,6 @@ extern "C" {
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
-
 
 namespace nix {
 
@@ -341,130 +329,6 @@ Roots LocalStore::findRoots(bool censor)
 
 typedef std::unordered_map<Path, std::unordered_set<std::string>> UncheckedRoots;
 
-static std::string quoteRegexChars(const std::string & raw)
-{
-    static auto specialRegex = std::regex(R"([.^$\\*+?()\[\]{}|])");
-    return std::regex_replace(raw, specialRegex, R"(\$&)");
-}
-
-#if __linux__
-static void readFileRoots(const char * path, UncheckedRoots & roots)
-{
-    try {
-        roots[readFile(path)].emplace(path);
-    } catch (SysError & e) {
-        if (e.errNo != ENOENT && e.errNo != EACCES)
-            throw;
-    }
-}
-#endif
-
-#if defined(__FreeBSD__)
-static void readSysctlRoots(const char * name, UncheckedRoots & roots)
-{
-    size_t len = 0;
-    std::string value;
-    if (int err = sysctlbyname(name, NULL, &len, NULL, 0) < 0) {
-        if (err == ENOENT || err == EACCES) return;
-        else throw SysError(err, "sysctlbyname %1%", name);
-    }
-
-    value.resize(len, ' ');
-    if (int err = sysctlbyname(name, value.data(), &len, NULL, 0) < 0) {
-        if (err == ENOENT || err == EACCES) return;
-        else throw SysError(err, "sysctlbyname %1%", name);
-    }
-
-    for(auto & path : tokenizeString<Strings>(value, ";"))
-        roots[path].emplace(fmt("{{sysctl:%1%}}", name));
-}
-
-struct ProcstatDeleter
-{
-    void operator()(struct procstat *ps) {
-        procstat_close(ps);
-    }
-};
-
-template<auto del>
-struct ProcstatReferredDeleter
-{
-    struct procstat * ps;
-
-    ProcstatReferredDeleter(struct procstat * ps) : ps(ps) { }
-
-    template <typename T>
-    void operator()(T *p) { del(ps, p); }
-};
-
-static void readProcstatRoots(const std::string & storeDir, UncheckedRoots & roots)
-{
-    auto storePathRegex = std::regex(quoteRegexChars(storeDir) + R"(/[0-9a-z]+[0-9a-zA-Z\+\-\._\?=]*)");
-
-    auto ps = std::unique_ptr<struct procstat, ProcstatDeleter>(procstat_open_sysctl());
-    if (!ps) {
-        throw SysError("procstat_open_sysctl");
-    }
-
-    auto procs = std::unique_ptr<struct kinfo_proc[], ProcstatReferredDeleter<procstat_freeprocs>>(NULL, ps.get());
-    auto files = std::unique_ptr<struct filestat_list, ProcstatReferredDeleter<procstat_freefiles>>(NULL, ps.get());
-
-
-    unsigned int numprocs = 0;
-    procs.reset(procstat_getprocs(ps.get(), KERN_PROC_PROC, 0, &numprocs));
-    if (!procs || numprocs == 0) {
-        throw SysError("procstat_getprocs");
-    };
-
-    for (unsigned int procidx = 0; procidx < numprocs; procidx++) {
-        // Includes file descriptors, executable, cwd,
-        // and mmapped files (including dynamic libraries)
-        files.reset(procstat_getfiles(ps.get(), &procs[procidx], 1));
-        if (!files)
-            throw SysError("procstat_getfiles");
-
-        for(struct filestat *file = files->stqh_first; file; file = file->next.stqe_next) {
-            if (!file->fs_path)
-                continue;
-
-            std::string role;
-            if (file->fs_uflags & PS_FST_UFLAG_CTTY)
-                role = "ctty";
-            else if (file->fs_uflags & PS_FST_UFLAG_CDIR)
-                role = "cwd";
-            else if (file->fs_uflags & PS_FST_UFLAG_JAIL)
-                role = "jail";
-            else if (file->fs_uflags & PS_FST_UFLAG_RDIR)
-                role = "root";
-            else if (file->fs_uflags & PS_FST_UFLAG_TEXT)
-                role = "text";
-            else if (file->fs_uflags & PS_FST_UFLAG_TRACE)
-                role = "trace";
-            else if (file->fs_uflags & PS_FST_UFLAG_MMAP)
-                role = "mmap";
-            else
-                role = fmt("fd/%1%", file->fs_fd);
-
-            roots[file->fs_path].emplace(fmt("{procstat:%1%/%2%}", procs[procidx].ki_pid, role));
-        }
-
-        auto env_name = fmt("{procstat:%1%/env}", procs[procidx].ki_pid);
-        // No need to free, the buffer is reused on next call and deallocated in procstat_close
-        char **env = procstat_getenvv(ps.get(), &procs[procidx], 0);
-        if (env == NULL)
-            continue;
-
-        for (size_t i = 0; env[i]; i++) {
-            auto envString = std::string(env[i]);
-
-            auto envEnd = std::sregex_iterator{};
-            for (auto match = std::sregex_iterator{envString.begin(), envString.end(), storePathRegex}; match != envEnd; match++)
-                roots[match->str()].emplace(envString);
-        }
-    }
-}
-#else
-
 static void readProcLink(const std::string & file, UncheckedRoots & roots)
 {
     constexpr auto bufsiz = PATH_MAX;
@@ -483,8 +347,28 @@ static void readProcLink(const std::string & file, UncheckedRoots & roots)
             .emplace(file);
 }
 
-static void readProcfsRoots(const std::string & storeDir, UncheckedRoots & roots)
+static std::string quoteRegexChars(const std::string & raw)
 {
+    static auto specialRegex = std::regex(R"([.^$\\*+?()\[\]{}|])");
+    return std::regex_replace(raw, specialRegex, R"(\$&)");
+}
+
+#if __linux__
+static void readFileRoots(const char * path, UncheckedRoots & roots)
+{
+    try {
+        roots[readFile(path)].emplace(path);
+    } catch (SysError & e) {
+        if (e.errNo != ENOENT && e.errNo != EACCES)
+            throw;
+    }
+}
+#endif
+
+void LocalStore::findRuntimeRoots(Roots & roots, bool censor)
+{
+    UncheckedRoots unchecked;
+
     auto procDir = AutoCloseDir{opendir("/proc")};
     if (procDir) {
         struct dirent * ent;
@@ -495,8 +379,8 @@ static void readProcfsRoots(const std::string & storeDir, UncheckedRoots & roots
             checkInterrupt();
             if (std::regex_match(ent->d_name, digitsRegex)) {
                 try {
-                    readProcLink(fmt("/proc/%s/exe" ,ent->d_name), roots);
-                    readProcLink(fmt("/proc/%s/cwd", ent->d_name), roots);
+                    readProcLink(fmt("/proc/%s/exe" ,ent->d_name), unchecked);
+                    readProcLink(fmt("/proc/%s/cwd", ent->d_name), unchecked);
 
                     auto fdStr = fmt("/proc/%s/fd", ent->d_name);
                     auto fdDir = AutoCloseDir(opendir(fdStr.c_str()));
@@ -508,7 +392,7 @@ static void readProcfsRoots(const std::string & storeDir, UncheckedRoots & roots
                     struct dirent * fd_ent;
                     while (errno = 0, fd_ent = readdir(fdDir.get())) {
                         if (fd_ent->d_name[0] != '.')
-                            readProcLink(fmt("%s/%s", fdStr, fd_ent->d_name), roots);
+                            readProcLink(fmt("%s/%s", fdStr, fd_ent->d_name), unchecked);
                     }
                     if (errno) {
                         if (errno == ESRCH)
@@ -522,14 +406,14 @@ static void readProcfsRoots(const std::string & storeDir, UncheckedRoots & roots
                     for (const auto & line : mapLines) {
                         auto match = std::smatch{};
                         if (std::regex_match(line, match, mapRegex))
-                            roots[match[1]].emplace(mapFile);
+                            unchecked[match[1]].emplace(mapFile);
                     }
 
                     auto envFile = fmt("/proc/%s/environ", ent->d_name);
                     auto envString = readFile(envFile);
                     auto env_end = std::sregex_iterator{};
                     for (auto i = std::sregex_iterator{envString.begin(), envString.end(), storePathRegex}; i != env_end; ++i)
-                        roots[i->str()].emplace(envFile);
+                        unchecked[i->str()].emplace(envFile);
                 } catch (SystemError & e) {
                     if (errno == ENOENT || errno == EACCES || errno == ESRCH)
                         continue;
@@ -541,21 +425,7 @@ static void readProcfsRoots(const std::string & storeDir, UncheckedRoots & roots
             throw SysError("iterating /proc");
     }
 
-}
-#endif
-
-void LocalStore::findRuntimeRoots(Roots & roots, bool censor)
-{
-    UncheckedRoots unchecked;
-
-#if defined(__FreeBSD__)
-    readProcstatRoots(storeDir, unchecked);
-#else
-    readProcfsRoots(storeDir, unchecked);
-#endif
-
-
-#if !defined(__linux__) && !defined(__FreeBSD__)
+#if !defined(__linux__)
     // lsof is really slow on OS X. This actually causes the gc-concurrent.sh test to fail.
     // See: https://github.com/NixOS/nix/issues/3011
     // Because of this we disable lsof when running the tests.
@@ -579,8 +449,6 @@ void LocalStore::findRuntimeRoots(Roots & roots, bool censor)
     readFileRoots("/proc/sys/kernel/modprobe", unchecked);
     readFileRoots("/proc/sys/kernel/fbsplash", unchecked);
     readFileRoots("/proc/sys/kernel/poweroff_cmd", unchecked);
-#elif defined(__FreeBSD__)
-    readSysctlRoots("kern.module_path", unchecked);
 #endif
 
     for (auto & [target, links] : unchecked) {
