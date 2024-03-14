@@ -420,8 +420,9 @@ static void readProcstatRoots(const std::string & storeDir, UncheckedRoots & roo
         // Includes file descriptors, executable, cwd,
         // and mmapped files (including dynamic libraries)
         files.reset(procstat_getfiles(ps.get(), &procs[procidx], 1));
+        // We only have permission if we're root so just skip it if we fail
         if (!files)
-            throw SysError("procstat_getfiles");
+            continue;
 
         for(struct filestat *file = files->stqh_first; file; file = file->next.stqe_next) {
             if (!file->fs_path)
