@@ -102,8 +102,11 @@ void LocalDerivationGoal::chrootSetup(Path &chrootRootDir) {
 }
 
 void LocalDerivationGoal::createChild(const std::string &slaveName) {
-    /* Now that we now the sandbox uid, we can write
-       /etc/passwd. */
+
+    if (derivationType->isSandboxed())
+        privateNetwork = true;
+
+    // Do this before entering jail so we don't have to mount pwd_mkdb in
     writeFile(chrootRootDir + "/etc/passwd", fmt(
             "root:x:0:0::::Nix build user:%3%:/noshell\n"
             "nixbld:x:%1%:%2%::::Nix build user:%3%:/noshell\n"
