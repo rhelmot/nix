@@ -65,6 +65,11 @@ case "$(uname -s).$(uname -m)" in
         path=@tarballPath_x86_64-freebsd@
         system=x86_64-freebsd
         ;;
+    FreeBSD.arm64|FreeBSD.aarch64)
+        hash=@tarballHash_aarch64-freebsd@
+        path=@tarballPath_aarch64-freebsd@
+        system=aarch64-freebsd
+        ;;
     *) oops "sorry, there is no binary distribution of Nix for your platform";;
 esac
 

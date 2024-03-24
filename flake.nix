@@ -24,7 +24,7 @@
       linux64BitSystems = [ "x86_64-linux" "aarch64-linux" ];
       linuxSystems = linux32BitSystems ++ linux64BitSystems;
       darwinSystems = [ "x86_64-darwin" "aarch64-darwin" ];
-      freebsdSystems = [ "x86_64-freebsd" ];
+      freebsdSystems = [ "x86_64-freebsd" "aarch64-freebsd" ];
       systems = linuxSystems ++ darwinSystems ++ freebsdSystems;
 
       crossSystems = [
@@ -32,6 +32,7 @@
         "armv7l-unknown-linux-gnueabihf"
         "x86_64-unknown-netbsd"
         "x86_64-unknown-freebsd"
+        "aarch64-unknown-freebsd"
       ];
 
       # Nix doesn't yet build on this platform, so we put it in a
@@ -266,6 +267,7 @@
         ];
         installerScriptFreeBSD = installScriptFor [
           self.hydraJobs.binaryTarballCross."x86_64-linux"."x86_64-unknown-freebsd"
+          self.hydraJobs.binaryTarballCross."x86_64-linux"."aarch64-unknown-freebsd"
         ];
         installerScriptForGHA = installScriptFor [
           # Native
