@@ -3,6 +3,11 @@
 #include "file-system.hh"
 #include "sandbox.hh"
 
+#include <netlink/netlink.h>
+#include <netlink/netlink_route.h>
+
+#include <net/if.h>
+
 namespace nix {
 
 void unmountAll(Path &path) {
@@ -157,22 +162,44 @@ void LocalDerivationGoal::enterJail() {
         if (ioctl(fd.get(), SIOCSIFFLAGS, &ifr) == -1)
             throw SysError("cannot set loopback interface flags");
 
-        struct ifaliasreq ifa;
-        strcpy(ifa.ifra_name, "lo0");
-        ifa.ifra_addr.sa_len = 6;
-        ifa.ifra_addr.sa_family = AF_INET;
-        memcpy(ifa.ifra_addr.sa_data, new uint8_t[]{ 127, 0, 0, 1 }, 4);
+        AutoCloseFD netlink(socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+        struct {
+            struct nlmsghdr nl_hdr;
+            struct ifaddrmsg addr_msg;
+            struct nlattr tl;
+            uint8_t addr[4];
+        } msg;
 
-        ifa.ifra_broadaddr.sa_len = 6;
-        ifa.ifra_broadaddr.sa_family = AF_INET;
-        memcpy(ifa.ifra_broadaddr.sa_data, new uint8_t[]{ 127, 0, 0, 1 }, 4);
+        // Many of the fields are deprecated or not useful to us,
+        // just zero them all here
+        memset(&msg, 0, sizeof(msg));
 
-        ifa.ifra_mask.sa_len = 6;
-        ifa.ifra_mask.sa_family = AF_INET;
-        memcpy(ifa.ifra_mask.sa_data, new uint8_t[]{ 255, 0, 0, 0 }, 4);
+        msg.nl_hdr.nlmsg_len = sizeof(msg);
+        msg.nl_hdr.nlmsg_type = NL_RTM_NEWADDR;
+        msg.nl_hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 
-        if (ioctl(fd.get(), SIOCAIFADDR, &ifa) == -1)
-            throw SysError("cannot add loopback interface address");
+        msg.addr_msg.ifa_family = AF_INET;
+        msg.addr_msg.ifa_prefixlen = 8;
+        msg.addr_msg.ifa_index = if_nametoindex("lo0");
+
+        msg.tl.nla_len = sizeof(struct nlattr) + 4;
+        msg.tl.nla_type = IFLA_ADDRESS;
+        memcpy(msg.addr, new uint8_t[]{127, 0, 0, 1}, 4);
+
+        send(netlink.get(), (void *)&msg, sizeof(msg), 0);
+
+        struct {
+            struct nlmsghdr nl_hdr;
+            struct nlmsgerr err;
+        } response;
+        size_t n = recv(netlink.get(), &response, sizeof(response), 0);
+
+        if (n < sizeof(response) || response.nl_hdr.nlmsg_type != NLMSG_ERROR) {
+            throw SysError("Invalid repsonse when setting loopback interface address");
+        } else if (response.err.error != 0) {
+            throw SysError(response.err.error, "Could not set loopback interface address");
+        }
+
     }
 }
 
