@@ -368,7 +368,6 @@ void LocalDerivationGoal::cleanupPostOutputsRegisteredModeNonCheck()
 #if __FreeBSD__
     /* Unmount and free jail id, if in use */
     autoDelMounts.clear();
-    autoDelJail.reset();
 #endif
     /* Delete the chroot (if we were using one). */
     autoDelChroot.reset(); /* this runs the destructor */
@@ -1287,6 +1286,10 @@ void LocalDerivationGoal::runChild()
 #if __linux__
         if (useChroot) {
             setupChrootNamespaces(setUser);
+        }
+#elif __FreeBSD__
+        if (useChroot) {
+            enterJail();
         }
 #endif
 
