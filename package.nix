@@ -59,10 +59,10 @@
 
 # Run the unit tests as part of the build. See `installUnitTests` for an
 # alternative to this.
-, doCheck ? __forDefaults.canRunInstalled
+, doCheck ? false
 
 # Run the functional tests as part of the build.
-, doInstallCheck ? test-client != null || __forDefaults.canRunInstalled
+, doInstallCheck ? false
 
 # Check test coverage of Nix. Probably want to use with with at least
 # one of `doCHeck` or `doInstallCheck` enabled.

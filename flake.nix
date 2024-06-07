@@ -1,8 +1,9 @@
 {
   description = "The purely functional package manager";
 
-  inputs.nixpkgs.url = "github:rhelmot/nixpkgs/freebsd-staging";
-  inputs.nixpkgs-regression.url = "github:NixOS/nixpkgs/215d4d0fd80ca5163643b03a33fde804a29cc1e2";
+  inputs.nixpkgs.url = "github:rhelmot/nixpkgs/staging-test";
+  inputs.nixpkgs-regression.url = "github:rhelmot/nixpkgs/staging-test";
+  #inputs.nixpkgs-regression.url = "github:NixOS/nixpkgs/215d4d0fd80ca5163643b03a33fde804a29cc1e2";
   inputs.flake-compat = { url = "github:edolstra/flake-compat"; flake = false; };
   inputs.libgit2 = { url = "github:libgit2/libgit2"; flake = false; };
 
