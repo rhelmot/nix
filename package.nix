@@ -372,6 +372,10 @@ in {
 
   hardeningDisable = lib.optional stdenv.hostPlatform.isStatic "pie";
 
+  passthru = {
+    inherit bash-static;
+  };
+
   meta = {
     platforms = lib.platforms.unix ++ lib.platforms.windows;
     mainProgram = "nix";

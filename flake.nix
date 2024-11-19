@@ -143,13 +143,7 @@
             '';
           };
 
-          default-bash-static = (final.bash.override {
-            stdenv = final.stdenvAdapters.makeStatic stdenv;
-          }).overrideAttrs (final: prev: {
-            configureFlags = prev.configureFlags ++ [
-              "bash_cv_getenv_redef=no"
-            ];
-          });
+          default-bash-static = final.pkgsStatic.bash;
 
           libgit2-nix = final.libgit2.overrideAttrs (attrs: {
             src = libgit2;
