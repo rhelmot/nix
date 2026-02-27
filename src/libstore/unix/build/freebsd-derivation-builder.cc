@@ -7,8 +7,8 @@
 #  include <net/if.h>
 #  include <pwd.h>
 #  include <sys/mount.h>
-#  include <netlink/netlink.h>
-#  include <netlink/netlink_route.h>
+#  include <netlink/netlink_snl.h>
+#  include <netlink/netlink_snl_route.h>
 #  include <net/if.h>
 #  include <sys/param.h>
 #  include <sys/jail.h>
@@ -401,56 +401,47 @@ struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivati
             autoDelJail = std::make_shared<AutoRemoveJail>(jid);
 
             // Everything from here to the end of the block is setting up the network
-            AutoCloseFD fd(socket(PF_INET, SOCK_DGRAM, 0));
-            if (!fd)
-                throw SysError("cannot open IP socket");
+            // code adapted from freebsd/sbin/ifconfig/af_inet.c, in_exec_nl
+            Pid helper = startProcess([&]() {
+                unix::closeExtraFDs();
+                enterChroot();
 
-            struct ifreq ifr;
-            strcpy(ifr.ifr_name, "lo0");
-            ifr.ifr_flags = IFF_UP | IFF_LOOPBACK;
-            if (ioctl(fd.get(), SIOCSIFFLAGS, &ifr) == -1)
-                throw SysError("cannot set loopback interface flags");
+                struct snl_state ss = {};
+                if (!snl_init(&ss, NETLINK_ROUTE)) {
+                    throw SysError("Failed to init netlink connection");
+                }
 
-            AutoCloseFD netlink(socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+                struct snl_writer nw = {};
+                snl_init_writer(&ss, &nw);
+                struct nlmsghdr *hdr = snl_create_msg_request(&nw, NL_RTM_NEWADDR);
+                struct ifaddrmsg *ifahdr = snl_reserve_msg_object(&nw, struct ifaddrmsg);
 
-            struct
-            {
-                struct nlmsghdr nl_hdr;
-                struct ifaddrmsg addr_msg;
-                struct nlattr tl;
-                uint8_t addr[4];
-            } msg;
+                ifahdr->ifa_family = AF_INET;
+                ifahdr->ifa_prefixlen = 8;
+                ifahdr->ifa_index = if_nametoindex("lo0");
+                snl_add_msg_attr_ip4(&nw, IFA_LOCAL, (const struct in_addr*)"\x7f\x00\x00\x01");
 
-            // Many of the fields are deprecated or not useful to us,
-            // just zero them all here
-            memset(&msg, 0, sizeof(msg));
+                int off = snl_add_msg_attr_nested(&nw, IFA_FREEBSD);
+                snl_add_msg_attr_u32(&nw, IFAF_FLAGS, IFF_LOOPBACK | IFF_UP);
+                snl_end_attr_nested(&nw, off);
 
-            msg.nl_hdr.nlmsg_len = sizeof(msg);
-            msg.nl_hdr.nlmsg_type = NL_RTM_NEWADDR;
-            msg.nl_hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+                if (! (hdr = snl_finalize_msg(&nw)) || !snl_send_message(&ss, hdr)) {
+                    snl_free(&ss);
+                    throw SysError("Failed to sendoff netlink message");
+                }
 
-            msg.addr_msg.ifa_family = AF_INET;
-            msg.addr_msg.ifa_prefixlen = 8;
-            msg.addr_msg.ifa_index = if_nametoindex("lo0");
+                struct snl_errmsg_data e = {};
+                snl_read_reply_code(&ss, hdr->nlmsg_seq, &e);
+                if (e.error_str != NULL) {
+                    snl_free(&ss);
+                    throw SysError("Failed to configure loopback interface: %1%", e.error_str);
+                }
+                snl_free(&ss);
+                _exit(0);
+            });
 
-            msg.tl.nla_len = sizeof(struct nlattr) + 4;
-            msg.tl.nla_type = IFLA_ADDRESS;
-            memcpy(msg.addr, new uint8_t[]{127, 0, 0, 1}, 4);
-
-            send(netlink.get(), (void *) &msg, sizeof(msg), 0);
-
-            struct
-            {
-                struct nlmsghdr nl_hdr;
-                struct nlmsgerr err;
-            } response;
-
-            size_t n = recv(netlink.get(), &response, sizeof(response), 0);
-
-            if (n < sizeof(response) || response.nl_hdr.nlmsg_type != NLMSG_ERROR) {
-                throw SysError("Invalid repsonse when setting loopback interface address");
-            } else if (response.err.error != 0) {
-                throw SysError(response.err.error, "Could not set loopback interface address");
+            if (helper.wait() != 0) {
+                throw SysError("Failed to configure loopback address");
             }
         } else {
             jid = jail_setv(
