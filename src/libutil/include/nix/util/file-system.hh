@@ -478,17 +478,4 @@ private:
     std::filesystem::directory_iterator it_;
 };
 
-#ifdef __FreeBSD__
-class AutoUnmount
-{
-    Path path;
-    bool del;
-public:
-    AutoUnmount(Path &);
-    AutoUnmount();
-    ~AutoUnmount();
-    void cancel();
-};
-#endif
-
 } // namespace nix

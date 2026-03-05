@@ -188,8 +188,7 @@ struct iovec iovFromDynamicSizeString(const std::string & s)
 struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivationBuilder
 {
     /* Destructors happen in reverse order from declaration */
-    std::shared_ptr<AutoRemoveJail> autoDelJail;
-    std::vector<std::shared_ptr<AutoUnmount>> autoDelMounts;
+    std::shared_ptr<AutoRemoveJail> autoDelJail = std::make_shared<AutoRemoveJail>();
 
     ChrootFreeBSDDerivationBuilder(
         LocalStore & store, std::unique_ptr<DerivationBuilderCallbacks> miscMethods, DerivationBuilderParams params)
@@ -197,15 +196,6 @@ struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivati
         , ChrootDerivationBuilder{store, std::move(miscMethods), std::move(params)}
         , FreeBSDDerivationBuilder{store, std::move(miscMethods), std::move(params)}
     {
-    }
-
-    void cleanupBuild(bool force) override
-    {
-        /* Unmount and free jail id, if in use */
-        autoDelMounts.clear();
-        autoDelJail.reset();
-
-        ChrootDerivationBuilder::cleanupBuild(force);
     }
 
     void extraChrootParentDirCleanup(const Path & chrootParentDir) override
@@ -288,7 +278,7 @@ struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivati
         if (nmount(iov, 6, 0) < 0) {
             throw SysError("Failed to mount jail /dev: %1%", errmsg);
         }
-        autoDelMounts.push_back(std::make_shared<AutoUnmount>(devpath));
+        autoDelJail->childrenMounts.emplace_back(devpath);
 
         for (auto & i : pathsInChroot) {
             char errmsg[255];
@@ -325,7 +315,7 @@ struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivati
             if (nmount(iov, 8, 0) < 0) {
                 throw SysError("Failed to mount nullfs for %1% - %2%", path, errmsg);
             }
-            autoDelMounts.push_back(std::make_shared<AutoUnmount>(path));
+            autoDelJail->childrenMounts.emplace_back(path);
         }
 
         /* Fixed-output derivations typically need to access the
@@ -398,7 +388,7 @@ struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivati
             if (jid < 0) {
                 throw SysError("Failed to create jail (isolated network): %1%", jail_errmsg);
             }
-            autoDelJail = std::make_shared<AutoRemoveJail>(jid);
+            autoDelJail->reset(jid);
 
             // Everything from here to the end of the block is setting up the network
             // code adapted from freebsd/sbin/ifconfig/af_inet.c, in_exec_nl
@@ -464,7 +454,7 @@ struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivati
             if (jid < 0) {
                 throw SysError("Failed to create jail (networked): %1%", jail_errmsg);
             }
-            autoDelJail = std::make_shared<AutoRemoveJail>(jid);
+            autoDelJail->reset(jid);
         }
 
         pid = startProcess([&]() {

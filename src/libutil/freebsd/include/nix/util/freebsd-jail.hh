@@ -10,6 +10,7 @@ class AutoRemoveJail
     bool del;
 public:
     int jid;
+    std::vector<Path> childrenMounts;
     AutoRemoveJail(int jid);
     AutoRemoveJail();
     ~AutoRemoveJail();

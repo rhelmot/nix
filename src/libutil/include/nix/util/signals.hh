@@ -7,6 +7,13 @@
 
 #include <functional>
 
+#if defined(__FreeBSD__)
+// SIGUSR1 is used by bdwgc
+#define SIG_MULTI_INT SIGTSTP
+#elif !defined(_WIN32)
+#define SIG_MULTI_INT SIGUSR1
+#endif
+
 namespace nix {
 
 /* User interruption. */
@@ -50,7 +57,7 @@ struct InterruptCallback
 std::unique_ptr<InterruptCallback> createInterruptCallback(std::function<void()> callback);
 
 /**
- * A RAII class that causes the current thread to receive SIGUSR1 when
+ * A RAII class that causes the current thread to receive SIG_MULTI_INT when
  * the signal handler thread receives SIGINT. That is, this allows
  * SIGINT to be multiplexed to multiple threads.
  *

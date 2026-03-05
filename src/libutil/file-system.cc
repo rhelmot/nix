@@ -639,39 +639,6 @@ void AutoDelete::reset(const std::filesystem::path & p, bool recursive)
 
 //////////////////////////////////////////////////////////////////////
 
-#ifdef __FreeBSD__
-AutoUnmount::AutoUnmount()
-    : del{false}
-{
-}
-
-AutoUnmount::AutoUnmount(Path & p)
-    : path(p)
-    , del(true)
-{
-}
-
-AutoUnmount::~AutoUnmount()
-{
-    try {
-        if (del) {
-            if (unmount(path.c_str(), 0) < 0) {
-                throw SysError("Failed to unmount path %1%", path);
-            }
-        }
-    } catch (...) {
-        ignoreExceptionInDestructor();
-    }
-}
-
-void AutoUnmount::cancel()
-{
-    del = false;
-}
-#endif
-
-//////////////////////////////////////////////////////////////////////
-
 std::filesystem::path defaultTempDir()
 {
     return getEnvNonEmpty("TMPDIR").value_or("/tmp");
