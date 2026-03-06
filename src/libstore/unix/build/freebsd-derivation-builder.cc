@@ -206,7 +206,7 @@ struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivati
 
     virtual void cleanupBuild(bool force) override
     {
-        autoDelJail.reset(); // Run the destructor
+        autoDelJail.remove();
         ChrootDerivationBuilder::cleanupBuild(force);
     }
 
@@ -339,7 +339,7 @@ struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivati
                     //
                     // I also just generally feel icky about modifying sandbox state under a build,
                     // even though it really shouldn't be a big deal. -K900
-                    copyFile(path, std::filesystem::path{chrootRootDir} / path.relative_path(), false, true);
+                    copyFile(path, chrootRootDir / path.relative_path(), false, true);
                 }
             }
 
@@ -462,6 +462,10 @@ struct ChrootFreeBSDDerivationBuilder : ChrootDerivationBuilder, FreeBSDDerivati
 
     void enterChroot() override
     {
+        /* Close all other file descriptors. This must happen before
+           jail_attach for FreeBSD. */
+        unix::closeExtraFDs();
+
         if (jail_attach(autoDelJail->jid) < 0) {
             throw SysError("Failed to attach to jail");
         }

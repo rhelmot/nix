@@ -42,6 +42,14 @@ public:
     ~AutoRemoveJail();
 
     /**
+     * Remove the jail and cancel this `AutoRemoveJail`, so jail removal is not
+     * attempted a second time by the destructor.
+     *
+     * The destructor calls this ignoring any exception.
+     */
+    void remove();
+
+    /**
      * Cancel the jail removal.
      */
     void cancel() noexcept;
